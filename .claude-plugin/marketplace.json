@@ -1,7 +1,8 @@
 {
   "name": "judicata",
   "owner": {
-    "name": "Philipp Melikidis"
+    "name": "Philippos Melikidis",
+    "url": "https://philipposmelikidis.de"
   },
   "metadata": {
     "description": "Marketplace for the judicata plugin."

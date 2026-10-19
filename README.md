@@ -256,6 +256,16 @@ like an instruction. That is a heuristic, not a guarantee. Details:
 
 Full details and limits: [docs/reference.md](docs/reference.md#security).
 
+## What judicata runs, stores and sends
+
+- **Runs:** the Python core (`scripts/judicata.py`, standard library only, no packages
+  installed), the commands of your contract after your approval, a SessionStart hook that prints
+  a summary of the ledger, and reviewer sub-agents on your chat's model with read-only tools.
+- **Stores:** `.judicata/` (contracts and ledger) and one line in `.gitattributes` in your
+  project, and command approvals in the plugin's data directory (or `~/.local/state/judicata`).
+- **Sends:** nothing. judicata makes no network requests and collects no data. Your agent's
+  model sees the files under review, as with any review.
+
 ## Reference
 
 [docs/reference.md](docs/reference.md) covers the contract format, the three checks, findings
@@ -272,7 +282,11 @@ claude plugin eval . --scaffold --allow-tools Bash --trust-plugin --runs 1 --no-
 
 The tests drive the core command line. `skills/review/core/` is a generated copy of the
 core for plain skill installs: rebuild it with `python3 tools/bundle_core.py`, CI fails while
-it differs from the source. Five acceptance evals in `evals/` check the plugin's
+it differs from the source. Every change to shipped files (manifest, skills, agents, hooks,
+scripts, templates) needs an entry under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) or a
+higher version in `.claude-plugin/plugin.json`; `python3 tools/check_version.py` checks this in
+CI. To release: raise the version, move the Unreleased entries under it, tag `v<version>`.
+Five acceptance evals in `evals/` check the plugin's
 behavior in Claude Code against a baseline without the plugin. See
 [Development](docs/reference.md#development).
 
