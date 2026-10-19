@@ -274,3 +274,16 @@ def test_a_verifier_model_that_reads_like_an_instruction_is_flagged(project):
     shown = project.ok("contract", "show")
 
     assert "verifier.model" in {w["field"] for w in shown["warnings"]}
+
+
+@pytest.mark.parametrize(
+    ("changes", "field"),
+    [
+        ({"verifier": {"model": "sonnet\n", "max_runs": 5}}, "verifier.model"),
+        ({"reviewers": {"count": 1, "models": ["opus\n"]}}, "reviewers.models"),
+    ],
+)
+def test_a_model_name_with_a_trailing_line_break_is_rejected(project, changes, field):
+    error = project.fail("contract", "validate", stdin=proposal(project, **changes))
+
+    assert field in {p["field"] for p in error["details"]["problems"]}

@@ -18,10 +18,10 @@ from .errors import JudicataError
 from .project import Project
 
 TEMPLATES = ("code", "docs", "prose")
-NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
-ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*\Z")
+ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
 # a model name: inherit, opus, claude-opus-4-1, sonnet[1m], vendor/model:tag
-MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/\[\]-]{0,99}$")
+MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/\[\]-]{0,99}\Z")
 
 TOP_KEYS = {"name", "template", "paths", "reviewers", "stop", "verifier", "criteria"}
 CRITERION_KEYS = {"id", "text", "check", "required"}
