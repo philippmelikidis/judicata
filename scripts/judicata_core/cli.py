@@ -477,6 +477,20 @@ def _add_status(groups, common) -> None:
     command.set_defaults(handler=lambda a, p: status.show(p, a.contract))
 
 
+def _add_session(groups, common) -> None:
+    group = groups.add_parser(
+        "session", help="what a new session needs to know about the ledger"
+    )
+    commands = group.add_subparsers(dest="command", required=True)
+    summary = commands.add_parser(
+        "summary",
+        parents=[common],
+        help="the ledger summary the SessionStart hook gives a new session, for "
+        "hosts without hooks (writes nothing)",
+    )
+    summary.set_defaults(handler=lambda a, p: session.summary(p))
+
+
 GROUPS = [
     _add_round,
     _add_review,
@@ -485,6 +499,7 @@ GROUPS = [
     _add_contract,
     _add_scope,
     _add_status,
+    _add_session,
 ]
 
 

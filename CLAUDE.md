@@ -5,7 +5,8 @@ review contract (definition of done, severity, stop rule), fingerprints for find
 independent runs and hooks that feed the ledger into fresh sessions.
 
 - Stack: Python 3.11 or later, standard library only (core in `scripts/`), plugin parts in `skills/`, `agents/`,
-  `hooks/`, evals in `evals/`. Spec: issue #3.
+  `hooks/`, evals in `evals/`. Spec: issue #3 (in philippmelikidis/judicata-dev). After changing `scripts/`,
+  `templates/` or `agents/reviewer.md` run `python3 tools/bundle_core.py` (copy in `skills/review/core/`).
 - Lint: `uvx ruff@0.17.1 check . && uvx ruff@0.17.1 format --check .`
 - Tests: `uv run --with pytest==9.1.1 pytest`
 - Workflow: every change starts as a GitHub issue, gets its own branch from `main` and a pull request against `main`.
@@ -302,6 +303,10 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   every start (without a matcher, also after compact); Codex runs the same hook (spike #4). The working rules name
   the core with an absolute path (`session.CORE`, next to the package), for hosts that do not substitute the
   placeholder in skills.
+  `session summary` (#1, group `session`, JSON envelope, writes nothing) returns the same text as `context` for
+  hosts without hooks: finds the root like the hook (`find_root` from `--project`, not above the Git root) and
+  returns it as `project` (the skills use it as `<dir>`); without one `found` false, `project` and `context` null.
+  Hook and summary share `_safe_context`.
 
 **Ledger** (`ledger.py`): `.judicata/ledger.jsonl`, append only, one line per event
 `{"id": uuid4-hex, "ts": UTC ISO 8601 with Z, "type": snake_case, "data": {...}}`. Reading drops duplicate IDs
@@ -359,14 +364,30 @@ It carries the same data rule and reports text in the artifact that addresses AI
 `codex plugin add judicata@judicata` (reads `.claude-plugin/`), the plugin root is the copy under
 `~/.codex/plugins/cache/<marketplace>/judicata/<version>`. Verified with Codex 0.163: `CLAUDE_PLUGIN_ROOT` is only
 set in the hook, not in the model's shell commands, and Codex does not substitute it in skill text; hooks only run
-after trusting them via `/hooks`. Every skill therefore has a section "In Codex": root = the folder containing
-`skills/` above the SKILL.md (the path is in Codex' skill list) or from the hook context, omit `--state-dir`,
+after trusting them via `/hooks`. Every skill therefore has a section "In Codex and other agents": the core is
+`<skills>/review/core/scripts/judicata.py` (`<skills>` from the SKILL.md path in Codex' skill list, see "Plain
+skills") or the one named in the hook context, omit `--state-dir`,
 questions as a numbered list without AskUserQuestion; `review` plans Claude model names as `--models inherit` and
-starts reviewers with `spawn_agent` (`fork_turns` "none", prompt = reference to `agents/reviewer.md` plus the
+starts reviewers with `spawn_agent` (`fork_turns` "none", prompt = reference to `<skills>/review/core/agents/reviewer.md` plus the
 task), without sub-agents one reviewer with a note in the report. `status` reports a missing hook context (hint to
 `/hooks`). A plugin cannot ship Codex roles (`~/.codex/agents/*.toml`), and `sandbox_mode` in them did not apply in
 the test: reviewers in Codex are read-only by instruction only. In skill text never write `${CLAUDE_PLUGIN_ROOT}`
 outside the commands (Claude Code substitutes it everywhere).
+
+**Plain skills** (#1): `npx skills add philippmelikidis/judicata` (skills.sh) copies only `skills/<name>/`.
+So `skills/review/core/` holds a copy of `scripts/` (entry point and package), `templates/`, `agents/reviewer.md`
+and `LICENSE` in the same layout (`templates.py` finds the templates relative to itself). The source stays at the
+root; `tools/bundle_core.py` rebuilds the copy (deletes and copies, skips `__pycache__`), `--check` lists every
+difference and exits 1, a missing source exits 2 without touching the copy (CI step in the test job and `test_skills_install.py`). The plugin keeps using
+`${CLAUDE_PLUGIN_ROOT}/scripts/`. Hosts that do not substitute the placeholder (Codex, plain installs) use
+`<skills>/review/core/scripts/judicata.py` (`<skills>` = the folder above the skill's folder, the same path in a
+plugin and in a plain install) and `<skills>/<name>/SKILL.md` for the other skills; the skills' section "In Codex and
+other agents" says so. Plain install = no `scripts/judicata.py` above `<skills>` (a plugin root has one): no hook, so `review` and `status` run
+`session summary` first when the conversation has no session context for this project, and always say in the report
+that automatic session memory needs the plugin; reviewers via the host's sub-agents (read-only by instruction), without sub-agents one
+reviewer with a note; questions via the host's tool or a numbered list. Frontmatter only uses fields of the Agent
+Skills spec (`name`, `description`, `license`, `compatibility`, `metadata`; checked by a test). Verified with skills
+1.7.2 (`-a opencode` installs to `.agents/skills/`) and Codex 0.163 reading the plain skills; OpenCode itself not run.
 
 **Tests** (`tests/`): only seam 1 of the spec. `conftest.py` provides `project` (throwaway project in `tmp_path`)
 with `core()/ok()/fail()` (core as a subprocess with `sys.executable`, JSON back, `JUDICATA_STATE_DIR` =
@@ -380,7 +401,9 @@ No tests against internal functions. One file per behavior (`test_command_criter
 `test_contract_resolve.py`, `test_command_approval.py`, `test_reviewer_*.py`, `test_finding_*.py` (also
 `_decisions`, `_states`), `test_finding_suppression.py`, `test_reviewer_decisions.py`, `test_session_hook.py`
 (via `project.hook()`: raw call like a hook, (exit, stdout, stderr)), `test_branches.py` with a real `git merge`,
-`test_review_scope.py` (diff, find, narrowed rounds), `test_review_focus.py`, `test_revision.py` also without `git`
+`test_review_scope.py` (diff, find, narrowed rounds), `test_session_summary.py`, `test_skills_install.py` (bundled
+core equals the source, drift is reported and rebuilt, the core runs from a copy of `skills/` alone via
+`project.script`, frontmatter), `test_review_focus.py`, `test_revision.py` also without `git`
 in PATH, `test_stop_rule.py`, `test_status.py`, `test_required_unmet.py`), `test_prompt_injection.py` (detection
 with attack and harmless examples, marking in hook, plan, list, contract, status), `test_text_cleaning.py`
 (defusing). `core/ok/fail` take `stdin=` (dict as JSON, str, bytes); `proposal()` fills a template proposal like

@@ -1,7 +1,8 @@
 # judicata reference
 
 The [README](../README.md) gets you started. This page has the details: the contract format,
-the three checks, findings and decisions, the stop rule, Codex, security and development.
+the three checks, findings and decisions, the stop rule, Codex, other agents, security and
+development.
 
 ## How a review works
 
@@ -151,6 +152,50 @@ Ask in plain words as in Claude Code ("review this again", "is it done?") or nam
   once per host. That directory is outside the project: the Codex sandbox may ask you to
   allow writing there when you approve.
 
+## Other agents (plain skills)
+
+Agents that read [Agent Skills](https://agentskills.io) but have no judicata plugin
+(OpenCode, Cursor, Gemini CLI, Copilot and others) get the three skills as plain skill
+folders through [skills.sh](https://skills.sh):
+
+```bash
+npx skills@latest add philippmelikidis/judicata --skill '*' -a <agent>
+```
+
+`-a` names the agent (for example `opencode` or `cursor`; leave it out to choose), `-g`
+installs for all your projects instead of the current one. The installer copies
+`skills/review`, `skills/contract` and `skills/status` from this repository (OpenCode, for
+example, reads them from `.agents/skills/`). The review skill carries a copy of the core in
+`core/` (the command line, the templates and the reviewer instructions), and the other two
+skills use it, so install all three. Update with `npx skills@latest update`. In Claude Code
+and Codex use the plugin instead: the plugin gets everything below, and a second install
+would give you every skill twice.
+
+Ask in plain words as in Claude Code, or call the skills the way your agent does (their
+names are plain `review`, `contract` and `status`, without the `judicata:` prefix; another
+skill or command with the same name in your agent can shadow them). What a plain install
+does not have:
+
+- **No session hook.** Plain skills cannot ship hooks, so a new session does not start with
+  the summary of the ledger, and a chat that is not running a judicata skill does not know
+  your decisions. The review and status skills read the summary themselves before anything
+  else (`session summary`, the same text the hook gives), and their report says that
+  automatic session memory needs the plugin. A free review outside the skills ("look at this
+  file") can therefore bring back a finding you rejected; ask for a judicata review instead.
+- **No reviewer agent.** The review skill starts the reviewers with your agent's own
+  sub-agent tool, each with a fresh context, and asks them to change nothing: read-only by
+  instruction only, as in Codex. Model names of Claude (opus, sonnet) become your session's
+  model, and the report says so. If your agent has no sub-agents, the review runs with one
+  reviewer, the session itself, and the report says that it was not independent.
+- **No question buttons.** Without a question tool, questions come as a numbered list in the
+  chat, as in Codex.
+- **Approvals** of a contract's commands are stored in `~/.local/state/judicata` (or
+  `$XDG_STATE_HOME/judicata`), outside the project, once per machine.
+
+Checked with skills 1.7.2: the install layout for OpenCode, the core run from the installed
+copy, and Codex 0.163 using the plain skills (without the plugin) to report the status.
+OpenCode and Cursor themselves were not run.
+
 ## Security
 
 A repository you clone can bring its own `.judicata/`. judicata reads three kinds of text
@@ -194,7 +239,11 @@ uvx ruff@0.17.1 check . && uvx ruff@0.17.1 format --check .
 uv run --with pytest==9.1.1 pytest
 ```
 
-The tests drive the core command line. The behavior of the plugin in Claude Code (skills,
+The tests drive the core command line. `skills/review/core/` is a copy of `scripts/`,
+`templates/`, `agents/reviewer.md` and `LICENSE` for installs as plain skills (an install
+copies only the skill folders). Never edit it by hand: after changing the source run
+`python3 tools/bundle_core.py`; the tests and CI fail while the copy differs
+(`python3 tools/bundle_core.py --check` lists the differences). The behavior of the plugin in Claude Code (skills,
 reviewer agent, hook) is checked by five acceptance evals in `evals/`, run with
 `claude plugin eval` against the plugin and, as a baseline, against Claude without it:
 

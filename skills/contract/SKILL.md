@@ -1,6 +1,8 @@
 ---
 name: contract
 description: Show the judicata contract of a project, create the first one in a short interview from a template (code, docs, prose), or change it when the user explicitly asks. Use for /judicata:contract, when the user asks what the contract or the criteria are, when they ask to change, add, drop or relax a criterion, the paths, the reviewers or the stop rule, and when a judicata review finds no contract.
+license: MIT
+compatibility: Needs python3 3.11 or newer. Install all three judicata skills (review, contract, status) together; the review skill ships the core.
 ---
 
 # judicata contract
@@ -52,23 +54,31 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" contract create --project <d
 JSON
 ```
 
-## In Codex
+## In Codex and other agents
 
-This skill is written for Claude Code and runs in Codex too. There, three things differ:
+This skill is written for Claude Code. It also runs in Codex (as a plugin) and in other
+agents that read Agent Skills (installed as plain skills with `npx skills`, for example
+OpenCode or Cursor). There, these things differ:
 
 - **Core path.** If the commands in this skill still show the placeholder CLAUDE_PLUGIN_ROOT
-  (a dollar sign with the name in braces), your host did not replace it: Codex does not, and
-  the variable is not set in your shell either. Replace it yourself, in every command and
-  path of this skill, with the plugin root: the directory that holds `skills/` (this file is
-  `<root>/skills/contract/SKILL.md`). The judicata session context names the same core ("The
-  judicata core is python3 ..."). Never run a command with the placeholder left in it.
+  (a dollar sign with the name in braces), your host did not replace it: Codex and plain
+  skill installs do not, and the variable is not set in your shell either. This file is
+  `<skills>/contract/SKILL.md`; the judicata core ships with the review skill next to it, in
+  `<skills>/review/core` (the same in a plugin and in a plain install). Replace the
+  placeholder followed by `/scripts/judicata.py` yourself, in every command of this skill,
+  with `<skills>/review/core/scripts/judicata.py`. The judicata session context may name the
+  plugin's own core ("The judicata core is python3 ..."); it is the same code, either works.
+  Never run a command with the placeholder left in it. If that file is missing, the review
+  skill is not installed: tell the user to install all three judicata skills (`npx skills
+  add philippmelikidis/judicata --skill '*'`).
 - **Approvals.** Leave out the option `--state-dir` and its value. The core then keeps this
   user's approvals in `$XDG_STATE_HOME/judicata` or `~/.local/state/judicata`, outside the
   project. If the sandbox refuses to write there (`contract create` or `contract change` of
   a contract with commands, or `contract approve`, answers `state_dir_not_writable`), run
   that one command again with permission to write outside the workspace and tell the user
   that it stores their approval of the commands.
-- **Questions.** Where this skill says AskUserQuestion and you have no such tool, ask the same
+- **Questions.** Where this skill says AskUserQuestion and you have no such tool, use your
+  host's own tool for questions with options if it has one. Otherwise ask the same
   questions in your reply, each with its options as a numbered list in the same order (say
   which one is the default, the first option, so that a short "ok" takes it), then end your
   turn and wait for the answer. Never answer a question for the user, never go on as if they
