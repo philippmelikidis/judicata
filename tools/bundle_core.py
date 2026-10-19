@@ -22,9 +22,9 @@ The check compares the contents and the executable bit (Git tracks it):
   python3 tools/bundle_core.py          rebuild both copies
   python3 tools/bundle_core.py --check  exit 1 and list every difference (CI)
 
-Missing sources, a plugin skill without `internal: true` or a skills-lock.json
-at the root (npx skills would then skip the copies as installed) exit 2 and
-change nothing.
+Missing sources, a skill folder without SKILL.md, a plugin skill without
+`internal: true` directly below `metadata:` or a skills-lock.json at the root
+(npx skills would then skip the copies as installed) exit 2 and change nothing.
 """
 
 import argparse
@@ -48,10 +48,6 @@ SOURCES = [
 SKIP_DIRS = {"__pycache__"}
 SKIP_SUFFIXES = {".pyc"}
 FRONTMATTER = re.compile(r"\A---\n(.*?\n)---\n", re.DOTALL)
-# `internal: true` below `metadata:` (npx skills needs the boolean true)
-INTERNAL = re.compile(
-    r"^metadata:\n((?:[ \t]+.*\n)*?)[ \t]+internal: true\n", re.MULTILINE
-)
 
 
 def _files(base: Path, entries: list[Path]) -> dict[Path, Path]:
@@ -84,17 +80,37 @@ def _frontmatter(text: str) -> str:
     return match.group(1) if match else ""
 
 
-def prefixed(text: str, names: list[str]) -> str:
-    """SKILL.md of a plugin skill as its prefixed copy."""
+def _internal(frontmatter: str) -> tuple[bool, str]:
+    """(has `internal: true` directly below `metadata:`, frontmatter without it).
+
+    npx skills needs the boolean true; a deeper `internal` does not count.
+    """
+    lines = frontmatter.splitlines(keepends=True)
+    for start, line in enumerate(lines):
+        if line != "metadata:\n":
+            continue
+        end = start + 1
+        while end < len(lines) and lines[end][:1] in (" ", "\t"):
+            end += 1
+        children = lines[start + 1 : end]
+        indent = re.match(r"[ \t]*", children[0]).group() if children else ""
+        kept = [child for child in children if child != f"{indent}internal: true\n"]
+        if len(kept) == len(children):
+            return False, frontmatter
+        block = [line, *kept] if kept else []  # drop an empty metadata
+        return True, "".join(lines[:start] + block + lines[end:])
+    return False, frontmatter
+
+
+def prefixed(text: str, skill: str, names: list[str]) -> str:
+    """SKILL.md of the plugin skill `skill` as its prefixed copy."""
     frontmatter = _frontmatter(text)
     if frontmatter:
         body = text[len(frontmatter) + 8 :]  # both "---\n" lines
-        copy = INTERNAL.sub(lambda m: f"metadata:\n{m.group(1)}", frontmatter)
+        copy = _internal(frontmatter)[1]
+        # the folder name, as the Agent Skills spec requires
         copy = re.sub(
-            r"^metadata:\n(?![ \t])", "", copy, flags=re.MULTILINE
-        )  # now empty
-        copy = re.sub(
-            r"^name: (\S+)$", rf"name: {PREFIX}\1", copy, count=1, flags=re.MULTILINE
+            r"^name:.*$", f"name: {PREFIX}{skill}", copy, count=1, flags=re.MULTILINE
         )
         text = f"---\n{copy}---\n{body}"
     name = "|".join(re.escape(n) for n in names)
@@ -132,7 +148,8 @@ def expected(root: Path) -> dict[Path, tuple[bytes, bool]]:
         files.update({p: v for p, v in core.items() if p.is_relative_to(source)})
         for path, (content, executable) in files.items():
             if path == source / "SKILL.md":
-                content = prefixed(content.decode("utf-8"), names).encode("utf-8")
+                text = prefixed(content.decode("utf-8"), name, names)
+                content = text.encode("utf-8")
             target = COPIES / f"{PREFIX}{name}" / path.relative_to(source)
             result[target] = (content, executable)
     return result
@@ -154,9 +171,17 @@ def source_problems(root: Path) -> list[str]:
     problems = [
         f"source missing: {p.as_posix()}" for p in SOURCES if not (root / p).exists()
     ]
+    if (root / SKILLS).is_dir():
+        for folder in sorted((root / SKILLS).iterdir()):
+            if folder.is_dir() and not (folder / "SKILL.md").is_file():
+                problems.append(
+                    f"{SKILLS.as_posix()}/{folder.name}/SKILL.md is missing "
+                    "(the build would drop the copy of this skill)"
+                )
     for name in _skills(root):
         path = SKILLS / name / "SKILL.md"
-        if not INTERNAL.search(_frontmatter((root / path).read_text(encoding="utf-8"))):
+        text = (root / path).read_text(encoding="utf-8")
+        if not _internal(_frontmatter(text))[0]:
             problems.append(
                 f"{path.as_posix()}: the frontmatter needs `metadata:` with "
                 "`internal: true` (hides the plugin skill from npx skills)"

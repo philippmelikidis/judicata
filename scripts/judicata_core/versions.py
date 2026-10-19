@@ -41,8 +41,9 @@ from .project import Project
 CONTRACT_VERSION = states.CONTRACT_VERSION
 APPROVAL_LOGGED = "approval_logged"
 HEADER = (
-    "# judicata contract. It is frozen: change it only through /judicata:contract,\n"
-    "# every stored version is recorded in .judicata/ledger.jsonl.\n"
+    "# judicata contract. It is frozen: change it only through /judicata:contract\n"
+    "# (judicata-contract as a plain skill), every stored version is recorded in\n"
+    "# .judicata/ledger.jsonl.\n"
 )
 
 

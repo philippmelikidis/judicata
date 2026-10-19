@@ -116,6 +116,24 @@ def test_installed_skills_run_the_core_without_the_plugin(project, installed):
     assert (installed / "judicata-review" / "core" / "agents" / "reviewer.md").is_file()
 
 
+def test_the_installed_core_names_the_prefixed_skills(project, installed):
+    project.ok("contract", "create", stdin=proposal(project, "prose"))
+    path = project.root / ".judicata" / "contracts" / "prose.toml"
+    header = "".join(path.read_text(encoding="utf-8").splitlines()[:3])
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace('text = "', 'text = "Edited: ', 1), encoding="utf-8")
+
+    context = project.ok("session", "summary")["context"]
+    edited = project.fail("round", "start")
+
+    assert "/judicata-review" in context and "/judicata-contract" in context
+    assert "/judicata:" not in context
+    assert edited["code"] == "contract_edited"
+    assert "/judicata-contract" in edited["message"]
+    # the contract file is shared by every install, so it names both
+    assert "/judicata:contract" in header and "judicata-contract" in header
+
+
 def test_installed_skills_find_each_other_and_the_core(installed):
     for skill in sorted(installed.iterdir()):
         text = (skill / "SKILL.md").read_text(encoding="utf-8")
@@ -213,15 +231,20 @@ def test_drifted_copies_are_reported_and_rebuilt(tmp_path):
     assert text.endswith("\nSee the judicata-status skill.\n")
 
 
-@pytest.mark.parametrize("broken", ["visible", "lock"])
-def test_a_visible_plugin_skill_or_a_lock_file_fails_and_changes_nothing(
+@pytest.mark.parametrize("broken", ["visible", "nested", "lost", "lock"])
+def test_a_visible_or_lost_plugin_skill_or_a_lock_file_fails_and_changes_nothing(
     tmp_path, broken
 ):
     root = copy_repo(tmp_path)
     status = root / "skills" / "status" / "SKILL.md"
+    expected = "skills/status/SKILL.md"
     if broken == "visible":
         status.write_text(status.read_text().replace("  internal: true\n", ""))
-        expected = "skills/status/SKILL.md"
+    elif broken == "nested":  # metadata.display.internal is not metadata.internal
+        nested = "  display:\n    internal: true\n"
+        status.write_text(status.read_text().replace("  internal: true\n", nested))
+    elif broken == "lost":
+        status.unlink()
     else:
         (root / "skills-lock.json").write_text("{}\n")
         expected = "skills-lock.json"
@@ -232,3 +255,13 @@ def test_a_visible_plugin_skill_or_a_lock_file_fails_and_changes_nothing(
         assert result.returncode == 2
         assert expected in result.stdout
     assert copy.read_bytes() == before
+
+
+def test_the_copy_takes_its_name_from_the_folder(tmp_path):
+    root = copy_repo(tmp_path)
+    status = root / "skills" / "status" / "SKILL.md"
+    status.write_text(status.read_text().replace("name: status", 'name: "status"'))
+
+    assert bundle(root=root).returncode == 0
+    copy = root / ".agents" / "skills" / "judicata-status" / "SKILL.md"
+    assert re.search(r"^name: judicata-status$", frontmatter(copy), re.MULTILINE)
