@@ -106,3 +106,23 @@ denied) and so recorded no decision, and the first run's prompt ("do not change 
 writing its ledger at all. The baseline for 0.1 is still to run with the command above.
 
 <!-- measurement results, newest first -->
+
+### 2026-10-19 (run 20261019-213816-56ab6b)
+
+- judicata 0.1.0 (v0.1.0-3-g643cf4d), Claude Code 2.1.303, model: claude-opus-5-5
+- cases: 4 (eval/01-rejected-finding, eval/03-required-blocker, seeded/inventory, seeded/invoice), trials per case and arm: 1, max rounds: 2, seed: judicata
+- cost: 4.50 USD of a cap of 10.00 USD, 16 sessions
+
+| Metric | judicata | plain Claude |
+| --- | --- | --- |
+| Re-raise rate | 0 of 3 (0 %) | 4 of 4 (100 %) |
+| Converged within 2 rounds | 0 of 2 | 1 of 2, mean 2.0 rounds |
+| Said done with seeded bugs left | n/a | 0 of 1 |
+| Blocker precision | 4 of 4 (100 %) | 4 of 4 (100 %) |
+| Blocker recall | 4 of 5 (80 %) | 4 of 5 (80 %) |
+| Recall, any severity | 5 of 5 (100 %) | 5 of 5 (100 %) |
+| Done as expected (eval cases) | 2 of 2 (100 %) | 2 of 2 (100 %) |
+| Replies without a findings block | 0 of 6 | 0 of 6 |
+| Trials left out (failed or no block) | 0 of 4 | 0 of 4 |
+| Skill fired | 6 of 6 sessions | n/a |
+| Cost (USD) | 3.50 | 1.00 |
