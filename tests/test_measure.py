@@ -248,7 +248,8 @@ def test_compares_both_arms_and_writes_the_summary(tmp_path):
         for line in summary.splitlines()
         if line.startswith("| ") and not line.startswith("| Metric")
     }
-    assert rows["Re-raise rate"] == ["0 of 2 (0 %)", "2 of 2 (100 %)"]
+    # plain Claude never heard of the scaffold's rejection, only of its own
+    assert rows["Re-raise rate"] == ["0 of 2 (0 %)", "1 of 1 (100 %)"]
     assert rows["Converged within 2 rounds"] == ["1 of 1, mean 2.0 rounds", "0 of 1"]
     assert rows["Blocker precision"] == ["1 of 2 (50 %)", "1 of 3 (33 %)"]
     assert rows["Blocker recall"] == ["1 of 1 (100 %)", "1 of 1 (100 %)"]
@@ -281,3 +282,76 @@ def test_raw_results_never_go_into_the_repository(tmp_path):
     assert proc.returncode == 1
     assert "outside" in proc.stderr
     assert not (tmp_path / "calls.jsonl").exists()
+
+
+TWO = '''"""Tiny calculator."""
+
+
+def half(n):
+    """Half of n."""
+    return n // 2
+
+
+def double(n):
+    """Twice n."""
+    return n * 2
+'''
+
+
+def test_counts_each_finding_once_and_leaves_out_broken_replies(tmp_path):
+    env = setup(
+        tmp_path,
+        {
+            # one blocker between both seeded bugs is about the closer one only
+            "seeded-tiny-plain-t1": [
+                {"findings": {"done": False, "findings": [blocker("src/calc.py", 9)]}}
+            ],
+            # done although both seeded bugs are still there
+            "seeded-tiny-plain-t2": [{"findings": {"done": True, "findings": []}}],
+            # no findings block, or a broken one: no measurement
+            "eval-01-rejected-finding-plain-t1": [{"text": "Looks fine."}],
+            "eval-01-rejected-finding-plain-t2": [
+                {"findings": {"done": True, "findings": [42]}}
+            ],
+        },
+    )
+    case = tmp_path / "seeded" / "tiny"
+    (case / "project" / "src" / "calc.py").write_text(TWO, encoding="utf-8")
+    spec = {
+        "contract": CASE["contract"],
+        "pick": 2,
+        "mutations": [
+            {
+                "id": "half",
+                "kind": "bug",
+                "file": "src/calc.py",
+                "find": "return n // 2",
+                "replace": "return n // 3",
+            },
+            {
+                "id": "double",
+                "kind": "bug",
+                "file": "src/calc.py",
+                "find": "return n * 2",
+                "replace": "return n * 3",
+            },
+        ],
+    }
+    (case / "case.json").write_text(json.dumps(spec), encoding="utf-8")
+    proc = measure(
+        tmp_path, env, "--arm", "plain", "--trials", "2", "--max-rounds", "1"
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    summary = (tmp_path / "measurement.md").read_text(encoding="utf-8")
+    rows = {
+        line.split("|")[1].strip(): line.split("|")[3].strip()
+        for line in summary.splitlines()
+        if line.startswith("| ")
+    }
+    assert rows["Blocker precision"] == "1 of 1 (100 %)"
+    assert rows["Blocker recall"] == "1 of 4 (25 %)"
+    assert rows["Converged within 1 rounds"] == "1 of 2, mean 1.0 rounds"
+    assert rows["Said done with seeded bugs left"] == "1 of 1"
+    assert rows["Trials left out (failed or no block)"] == "2 of 4"
+    assert rows["Done as expected (eval cases)"] == "n/a"

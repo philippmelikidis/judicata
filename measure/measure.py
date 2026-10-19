@@ -395,7 +395,7 @@ def _money(value: float) -> str:
 
 def _parse_stream(stream: str) -> dict:
     out = {"session_id": None, "model": None, "result": None, "cost": None}
-    out.update(skill=False, subtype=None, turns=None)
+    out.update(skill=False, subtype=None, turns=None, is_error=None)
     for line in stream.splitlines():
         try:
             event = json.loads(line)
@@ -422,6 +422,7 @@ def _parse_stream(stream: str) -> dict:
             out["cost"] = event.get("total_cost_usd")
             out["subtype"] = event.get("subtype")
             out["turns"] = event.get("num_turns")
+            out["is_error"] = event.get("is_error")
             out["session_id"] = event.get("session_id") or out["session_id"]
     return out
 
@@ -442,8 +443,8 @@ def parse_findings(text: str | None) -> dict | None:
         return None
     findings = []
     for entry in data["findings"]:
-        if not isinstance(entry, dict):
-            continue
+        if not isinstance(entry, dict) or not isinstance(entry.get("file"), str):
+            return None  # a broken entry makes the whole block unusable
         severity = str(entry.get("severity", "note")).casefold()
         findings.append(
             {
@@ -467,22 +468,44 @@ def _review(runner: Runner, project: Path, arm: str, prompt: str, label: str) ->
     session["parsed"] = parsed is not None
     session["done"] = bool(parsed and parsed["done"])
     session["findings"] = parsed["findings"] if parsed else []
+    # a failed, cut or unparsable review is no measurement: its trial is left out
+    session["ok"] = parsed is not None and _finished(session)
     return session
+
+
+def _finished(session: dict) -> bool:
+    return session["subtype"] == "success" and not session["is_error"]
+
+
+def _assign(finding: dict, items: list[Item]) -> Item | None:
+    """The one known point a finding is about: the closest matching line."""
+    matching = [item for item in items if item.matches(finding)]
+    if not matching:
+        return None
+    line = finding.get("line")
+    if not isinstance(line, int):
+        return matching[0]
+    return min(matching, key=lambda item: abs((item.line or line) - line))
+
+
+def _hits(findings: list[dict], items: list[Item], among: list[Item]) -> set[str]:
+    """IDs of items that findings are about, each finding counted once."""
+    assigned = (_assign(f, among) for f in findings)
+    ids = {item.id for item in items}
+    return {item.id for item in assigned if item and item.id in ids}
 
 
 def _score_first(trial: dict, session: dict, bugs: list[Item]) -> None:
     blockers = [f for f in session["findings"] if f["severity"] == "blocker"]
     trial["blockers"] = len(blockers)
-    trial["true_blockers"] = sum(any(b.matches(f) for b in bugs) for f in blockers)
+    trial["true_blockers"] = sum(_assign(f, bugs) is not None for f in blockers)
     trial["bugs"] = len(bugs)
-    trial["bugs_hit_blocker"] = sum(any(b.matches(f) for f in blockers) for b in bugs)
-    trial["bugs_hit_any"] = sum(
-        any(b.matches(f) for f in session["findings"]) for b in bugs
-    )
+    trial["bugs_hit_blocker"] = len(_hits(blockers, bugs, bugs))
+    trial["bugs_hit_any"] = len(_hits(session["findings"], bugs, bugs))
 
 
-def _reraised(session: dict, decided: list[Item]) -> list[str]:
-    return [d.id for d in decided if any(d.matches(f) for f in session["findings"])]
+def _reraised(session: dict, decided: list[Item], bugs: list[Item]) -> list[str]:
+    return sorted(_hits(session["findings"], decided, bugs + decided))
 
 
 def eval_trial(runner: Runner, case: Case, arm: str, n: int, work: Path) -> dict:
@@ -497,8 +520,11 @@ def eval_trial(runner: Runner, case: Case, arm: str, n: int, work: Path) -> dict
     session = _review(runner, project, arm, case.prompt, f"{project.name}-r1")
     trial["sessions"].append(_public(session))
     _score_first(trial, session, case.bugs)
-    trial["decided"] = len(case.decided)
-    trial["reraised"] = _reraised(session, case.decided)
+    # the plain arm never heard of the scaffold's decisions: nothing to re-raise
+    decided = case.decided if arm == "judicata" else []
+    trial["decided"] = len(decided)
+    trial["reraised"] = _reraised(session, decided, case.bugs)
+    trial["valid"] = session["ok"]
     trial["expected_done"] = case.expected_done
     trial["done"] = session["done"]
     return trial
@@ -533,7 +559,7 @@ def seeded_trial(
     }
     trial = {"case": case.name, "kind": "seeded", "arm": arm, "trial": n}
     trial.update(seeded=[m["id"] for m in applied], sessions=[], decided=0)
-    trial.update(reraised=[], converged_round=None, rounds=0)
+    trial.update(reraised=[], converged_round=None, rounds=0, valid=True)
     decided: list[Item] = []
     fixed: set[str] = set()
     for rnd in range(1, args.max_rounds + 1):
@@ -542,26 +568,29 @@ def seeded_trial(
         session = _review(runner, project, arm, prompt, label)
         trial["sessions"].append(_public(session))
         trial["rounds"] = rnd
+        if not session["ok"]:
+            trial["valid"] = False
+            break
         if rnd == 1:
             _score_first(trial, session, bugs)
         else:
             trial["decided"] += len(decided)
-            trial["reraised"] += _reraised(session, decided)
+            trial["reraised"] += _reraised(session, decided, bugs)
         blockers = [f for f in session["findings"] if f["severity"] == "blocker"]
         if session["done"] and not blockers:
             trial["converged_round"] = rnd
+            trial["bugs_left_at_done"] = len(bugs) - len(fixed)
             break
         if rnd == args.max_rounds:
             break
         # the user: reject what is not a seeded bug, fix the seeded bugs reported
         rejects = []
+        known = bugs + decided + list(decoys.values())
         for finding in session["findings"]:
-            if any(b.matches(finding) for b in bugs):
+            point = _assign(finding, known + [r for r, _ in rejects])
+            if point in bugs or point in decided or point in [r for r, _ in rejects]:
                 continue
-            if any(d.matches(finding) for d in decided + [r for r, _ in rejects]):
-                continue
-            decoy = next((d for d in decoys.values() if d.matches(finding)), None)
-            item = decoy or Item(
+            item = point or Item(
                 f"point-{len(decided) + len(rejects) + 1}",
                 finding["file"],
                 finding["line"],
@@ -572,12 +601,12 @@ def seeded_trial(
             label = f"{project.name}-r{rnd}-decisions"
             turn = runner.run(project, arm, text, label, session["session_id"])
             trial["sessions"].append(_public(turn))
-            decided += [item for item, _ in rejects]
+            # only a decision the session received counts as decided
+            if _finished(turn):
+                decided += [item for item, _ in rejects]
+        reported = _hits(session["findings"], bugs, known)
         for mutation in applied:
-            if mutation["kind"] != "bug" or mutation["id"] in fixed:
-                continue
-            item = next(b for b in bugs if b.id == mutation["id"])
-            if any(item.matches(f) for f in session["findings"]):
+            if mutation["kind"] == "bug" and mutation["id"] in reported - fixed:
                 _fix(project, mutation)
                 fixed.add(mutation["id"])
         _commit(project, "Fix points from the review")
@@ -605,7 +634,7 @@ def _decisions(rejects: list[tuple[Item, dict]]) -> str:
 def _public(session: dict) -> dict:
     keys = ("label", "session_id", "model", "cost", "budget", "subtype", "turns")
     out = {key: session.get(key) for key in keys}
-    for key in ("skill", "parsed", "done", "findings", "error", "result"):
+    for key in ("skill", "parsed", "ok", "done", "findings", "error", "result"):
         if key in session:
             out[key] = session[key]
     return out
@@ -623,22 +652,25 @@ def _ratio(hit: int, total: int, percent: bool = True) -> str:
 
 
 def metrics(trials: list[dict], arm: str, max_rounds: int) -> dict:
-    mine = [t for t in trials if t["arm"] == arm]
-    if not mine:
+    every = [t for t in trials if t["arm"] == arm]
+    if not every:
         return {}
-    reviews = [s for t in mine for s in t["sessions"] if "parsed" in s]
+    reviews = [s for t in every for s in t["sessions"] if "parsed" in s]
+    mine = [t for t in every if t["valid"]]
     seeded = [t for t in mine if t["kind"] == "seeded"]
     converged = [t for t in seeded if t["converged_round"]]
     rounds = sum(t["converged_round"] for t in converged)
     conv = _ratio(len(converged), len(seeded), percent=False)
     if converged:
         conv += f", mean {rounds / len(converged):.1f} rounds"
+    left = sum(t.get("bugs_left_at_done", 0) > 0 for t in converged)
     expect = [t for t in mine if t.get("expected_done") is not None]
     out = {
         "Re-raise rate": _ratio(
             sum(len(t["reraised"]) for t in mine), sum(t["decided"] for t in mine)
         ),
         f"Converged within {max_rounds} rounds": conv,
+        "Said done with seeded bugs left": _ratio(left, len(converged), False),
         "Blocker precision": _ratio(
             sum(t.get("true_blockers", 0) for t in mine),
             sum(t.get("blockers", 0) for t in mine),
@@ -657,8 +689,11 @@ def metrics(trials: list[dict], arm: str, max_rounds: int) -> dict:
         "Replies without a findings block": _ratio(
             sum(not s["parsed"] for s in reviews), len(reviews), percent=False
         ),
+        "Trials left out (failed or no block)": _ratio(
+            len(every) - len(mine), len(every), percent=False
+        ),
         "Skill fired": "n/a",
-        "Cost (USD)": f"{sum(s['cost'] for t in mine for s in t['sessions']):.2f}",
+        "Cost (USD)": f"{sum(s['cost'] for t in every for s in t['sessions']):.2f}",
     }
     if arm == "judicata":
         fired = sum(bool(s.get("skill")) for s in reviews)
@@ -825,6 +860,9 @@ def main(argv: list[str]) -> int:
     finally:
         if not args.keep_temp:
             shutil.rmtree(work, ignore_errors=True)
+    # the last session used up the cap and could not finish: also a cut run
+    if runner.spent >= args.max_cost_usd - 1e-9 and any(not t["valid"] for t in trials):
+        stopped = True
     run = {
         "id": run_id,
         "date": datetime.now(UTC).strftime("%Y-%m-%d"),

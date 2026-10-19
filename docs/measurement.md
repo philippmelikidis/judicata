@@ -35,19 +35,25 @@ The corpus:
 
 Every review prompt asks for a `findings` block (JSON: done, findings with file, line, severity, summary) at
 the end of the reply. The metrics come only from these blocks, the same way for both arms. A finding matches a
-known point when it names the same file and a line within 3 lines (without a line: keywords of the point).
+known point when it names the same file and a line within 3 lines (without a line: keywords of the point);
+a finding near several points counts for the closest one only. A trial whose review failed, ran out of budget
+or had no valid findings block is left out of the metrics and counted as left out.
 
 ## Metrics
 
-- **Re-raise rate**: points decided earlier (in the scaffold, or rejected by the user in an earlier session)
-  that a fresh session reports as open again, at any severity.
+- **Re-raise rate**: points decided earlier that a fresh session reports as open again, at any severity.
+  Decided means rejected by the user in an earlier session of the same trial (both arms), or in the scaffold of
+  an eval case (judicata arm only: the plain arm never heard of that decision). A decision counts only if its
+  session turn finished.
 - **Converged within N rounds**: seeded trials whose review said done without a blocker within `--max-rounds`,
-  with the mean number of rounds.
+  with the mean number of rounds. "Said done with seeded bugs left" counts those of them that still had a
+  seeded bug, so missing bugs never looks like convergence.
 - **Blocker precision and recall**: blockers of the first review against the seeded bugs (precision: blockers
   that are seeded bugs; recall: seeded bugs reported as blockers). "Recall, any severity" also counts
   should-fix and notes.
 - **Done as expected**: eval cases whose reply says done exactly when the truth says so.
-- Indicators: replies without a findings block, sessions in which the judicata skill fired, cost per arm.
+- Indicators: replies without a findings block, trials left out, sessions in which the judicata skill fired,
+  cost per arm.
 
 ## Why `claude -p` and not `claude plugin eval`
 
