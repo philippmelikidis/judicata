@@ -12,6 +12,9 @@ independent runs and hooks that feed the ledger into fresh sessions.
 - Workflow: every change starts as a GitHub issue, gets its own branch from `main` and a pull request against `main`.
   Lint and tests are green before the PR is opened.
 - Commit messages, PR titles and PR descriptions in English (public repository).
+- Changes to shipped files (`.claude-plugin/`, `skills/`, `agents/`, `hooks/`, `scripts/`, `templates/`) need an entry under
+  `## [Unreleased]` in `CHANGELOG.md` or a higher version in `.claude-plugin/plugin.json` (`tools/check_version.py`, CI).
+  Release: raise the version, move the Unreleased entries under it, tag `v<version>`.
 - Plugin name without "claude" (reserved). The ledger lives in the project, never under `${CLAUDE_PLUGIN_ROOT}`.
 
 ## Architecture

@@ -21,9 +21,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v10.3.0
         with:
           python-version: "3.11"
       - name: bundled core in skills/review/core matches the source
         run: python3 tools/bundle_core.py --check
+      - name: shipped changes have a new version or an Unreleased changelog entry
+        run: python3 tools/check_version.py
       - run: uv run --with pytest==9.1.1 pytest

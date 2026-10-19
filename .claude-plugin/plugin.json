@@ -3,10 +3,20 @@
   "version": "0.1.0",
   "description": "Reviews that converge: a frozen contract defines when an artifact is done, and a ledger in the repo remembers what was already decided.",
   "author": {
-    "name": "Philipp Melikidis"
+    "name": "Philippos Melikidis",
+    "url": "https://philipposmelikidis.de"
   },
   "homepage": "https://github.com/philippmelikidis/judicata",
   "repository": "https://github.com/philippmelikidis/judicata",
   "license": "MIT",
-  "keywords": ["review", "code-review", "definition-of-done", "ledger"]
+  "keywords": [
+    "review",
+    "code-review",
+    "definition-of-done",
+    "ledger",
+    "convergence",
+    "ai-agents",
+    "codex",
+    "agent-skills"
+  ]
 }
