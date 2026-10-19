@@ -7,7 +7,7 @@ version users get: Claude Code updates the plugin only when it goes up.
 ## [Unreleased]
 
 - Reviewer quotes are checked strictly: a quote must start at the cited line of the cited file (only whitespace and line breaks may differ). A quote that is elsewhere or nowhere is rejected like any invalid reviewer answer, and the reason names the lines where it does start. Before, a quote within 5 lines was accepted and moved to its line.
-- Line numbers of reviewer places count line breaks only, as the reviewer's Read tool and the pattern check do; a form feed or a Unicode line separator no longer starts a new line.
+- Line numbers of reviewer places count line breaks only, as the reviewer's Read tool and the pattern check do; a form feed or a Unicode line separator no longer starts a new line. In a file with such characters a decided finding may come back to you once.
 
 ## [0.1.0] - 2026-10-19
 

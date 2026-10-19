@@ -216,3 +216,12 @@ def test_lines_are_counted_at_line_breaks_only(project):
 
     assert code == 0, payload
     assert entry["address"]["symbol"] == "first"
+
+
+def test_a_quote_on_many_lines_names_the_three_nearest(project):
+    setup(project)
+
+    code, payload = submit(project, verdict_output(12, "result"))
+
+    assert code != 0
+    assert "starts at lines 13, 5, 4 and 1 more" in problems(payload)[0]["problem"]

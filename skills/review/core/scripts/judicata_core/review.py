@@ -646,21 +646,23 @@ def _location(project: Project, location: dict, where: str, problems: list):
             _problem(f"{where}.line", f"{relative} has only {len(lines)} lines")
         )
         return None
-    starts = _quote_lines(lines, quote)
-    if line not in starts:
+    starts = _quote_lines(lines, quote, line)
+    if starts != [line]:
         problems.append(_problem(f"{where}.quote", _misquoted(relative, line, starts)))
         return None
     place = {"file": relative, "line": line, "quote": quote}
     return _Place(place, hashlib.sha256(data).hexdigest(), text, line)
 
 
-def _quote_lines(lines: list[str], quote: str) -> list[int]:
-    """Every line (1-based) the quote starts at, comparing whitespace-normalized.
+def _quote_lines(lines: list[str], quote: str, line: int) -> list[int]:
+    """[line] if the quote starts at that line, else every line it starts at.
 
-    The file's lines are joined with single spaces and runs of whitespace in
-    both are squashed, so indentation, tabs, line endings and line breaks do not
-    matter; every other character must match. A quote may start inside a line
-    and run on over the following ones.
+    Compared whitespace-normalized: the file's lines are joined with single
+    spaces and runs of whitespace in both are squashed, so indentation, tabs,
+    line endings and line breaks do not matter; every other character must
+    match. A quote may start inside a line and run on over the following ones.
+    The cited line is tried first; the other lines are only searched for the
+    reason of a rejection, one hit per line.
     """
     wanted = _squash(quote)
     if not wanted:
@@ -673,12 +675,15 @@ def _quote_lines(lines: list[str], quote: str) -> list[int]:
             pieces.append(piece)
             offset += len(piece) + 1
     joined = " ".join(pieces)
+    begins.append(len(joined) + 1)  # past the last line
+    position = joined.find(wanted, begins[line - 1])
+    if position != -1 and position < begins[line]:
+        return [line]
     found, position = [], joined.find(wanted)
     while position != -1:
         number = bisect.bisect_right(begins, position)
-        if not found or found[-1] != number:
-            found.append(number)
-        position = joined.find(wanted, position + 1)
+        found.append(number)
+        position = joined.find(wanted, begins[number])  # on from the next line
     return found
 
 
