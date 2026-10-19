@@ -39,26 +39,53 @@ def test_the_bundled_core_matches_the_source():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_a_drifted_bundle_is_reported_and_rebuilt(tmp_path):
+def copy_repo(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     for part in ("scripts", "templates", "agents", "skills"):
         shutil.copytree(REPO / part, root / part, ignore=IGNORE)
     shutil.copy(REPO / "LICENSE", root / "LICENSE")
+    return root
+
+
+def test_a_drifted_bundle_is_reported_and_rebuilt(tmp_path):
+    root = copy_repo(tmp_path)
     core = root / "skills" / "review" / "core"
     (core / "scripts" / "judicata_core" / "ledger.py").write_text("# by hand\n")
     (core / "templates" / "stale.toml").write_text("")
     (root / "templates" / "letter.toml").write_text('name = "letter"\n')
+    entry = core / "scripts" / "judicata.py"
+    entry.chmod(0o644)  # the source entry point is executable (shebang)
 
     checked = bundle("--check", root=root)
 
     assert checked.returncode == 1
-    for path in ("judicata_core/ledger.py", "templates/stale.toml", "letter.toml"):
+    for path in (
+        "judicata_core/ledger.py",
+        "templates/stale.toml",
+        "letter.toml",
+        "scripts/judicata.py",
+    ):
         assert path in checked.stdout
     assert bundle(root=root).returncode == 0
     assert bundle("--check", root=root).returncode == 0
     assert not (core / "templates" / "stale.toml").exists()
+    assert entry.stat().st_mode & 0o111
     for path in ("scripts/judicata_core/ledger.py", "templates/letter.toml"):
         assert (core / path).read_bytes() == (root / path).read_bytes()
+
+
+def test_a_missing_source_fails_and_keeps_the_bundle(tmp_path):
+    root = copy_repo(tmp_path)
+    (root / "scripts" / "judicata.py").unlink()
+    entry = root / "skills" / "review" / "core" / "scripts" / "judicata.py"
+
+    checked = bundle("--check", root=root)
+    built = bundle(root=root)
+
+    for result in (checked, built):
+        assert result.returncode != 0
+        assert "scripts/judicata.py" in result.stdout + result.stderr
+    assert entry.is_file()
 
 
 @pytest.fixture

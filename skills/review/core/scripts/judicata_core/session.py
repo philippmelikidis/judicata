@@ -79,13 +79,14 @@ def main(argv: list[str]) -> int:
 def summary(project: Project) -> dict:
     """`session summary`: the hook's context on demand (plain skills have no hook).
 
-    Only the project itself counts (no search upwards): the skills pass the
-    directory that holds .judicata/. Writes nothing.
+    Finds the project like the hook (--project or the nearest parent with
+    .judicata/, not above the Git root) and returns its root as `project`.
+    Writes nothing.
     """
-    state = project.state_dir
-    if not state.is_dir() or state.is_symlink():
-        return {"found": False, "context": None}
-    return {"found": True, "context": _safe_context(project.root)}
+    root = find_root(project.root)
+    if root is None:
+        return {"found": False, "project": None, "context": None}
+    return {"found": True, "project": str(root), "context": _safe_context(root)}
 
 
 def _safe_context(root: Path) -> str:

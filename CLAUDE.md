@@ -304,8 +304,9 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   the core with an absolute path (`session.CORE`, next to the package), for hosts that do not substitute the
   placeholder in skills.
   `session summary` (#1, group `session`, JSON envelope, writes nothing) returns the same text as `context` for
-  hosts without hooks: `found` false and `context` null without `.judicata/` directly in `--project` (no search
-  upwards, a symlink does not count); hook and summary share `_safe_context`.
+  hosts without hooks: finds the root like the hook (`find_root` from `--project`, not above the Git root) and
+  returns it as `project` (the skills use it as `<dir>`); without one `found` false, `project` and `context` null.
+  Hook and summary share `_safe_context`.
 
 **Ledger** (`ledger.py`): `.judicata/ledger.jsonl`, append only, one line per event
 `{"id": uuid4-hex, "ts": UTC ISO 8601 with Z, "type": snake_case, "data": {...}}`. Reading drops duplicate IDs
@@ -377,13 +378,13 @@ outside the commands (Claude Code substitutes it everywhere).
 So `skills/review/core/` holds a copy of `scripts/` (entry point and package), `templates/`, `agents/reviewer.md`
 and `LICENSE` in the same layout (`templates.py` finds the templates relative to itself). The source stays at the
 root; `tools/bundle_core.py` rebuilds the copy (deletes and copies, skips `__pycache__`), `--check` lists every
-difference and exits 1 (CI step in the test job and `test_skills_install.py`). The plugin keeps using
+difference and exits 1, a missing source exits 2 without touching the copy (CI step in the test job and `test_skills_install.py`). The plugin keeps using
 `${CLAUDE_PLUGIN_ROOT}/scripts/`. Hosts that do not substitute the placeholder (Codex, plain installs) use
 `<skills>/review/core/scripts/judicata.py` (`<skills>` = the folder above the skill's folder, the same path in a
 plugin and in a plain install) and `<skills>/<name>/SKILL.md` for the other skills; the skills' section "In Codex and
-other agents" says so. Plain install = no `hooks/hooks.json` above `<skills>`: no hook, so `review` and `status` run
-`session summary` first when the conversation has no session context, and say in the report that automatic session
-memory needs the plugin; reviewers via the host's sub-agents (read-only by instruction), without sub-agents one
+other agents" says so. Plain install = no `scripts/judicata.py` above `<skills>` (a plugin root has one): no hook, so `review` and `status` run
+`session summary` first when the conversation has no session context for this project, and always say in the report
+that automatic session memory needs the plugin; reviewers via the host's sub-agents (read-only by instruction), without sub-agents one
 reviewer with a note; questions via the host's tool or a numbered list. Frontmatter only uses fields of the Agent
 Skills spec (`name`, `description`, `license`, `compatibility`, `metadata`; checked by a test). Verified with skills
 1.7.2 (`-a opencode` installs to `.agents/skills/`) and Codex 0.163 reading the plain skills; OpenCode itself not run.

@@ -7,7 +7,8 @@ the plugin root: scripts/judicata.py with the package scripts/judicata_core/,
 templates/, agents/reviewer.md and LICENSE, in the same layout (the core finds
 its templates relative to itself).
 
-The source of truth stays at the plugin root. Never edit the copy by hand:
+The source of truth stays at the plugin root. The check compares the contents and
+the executable bit (Git tracks it). Never edit the copy by hand:
 
   python3 tools/bundle_core.py          rebuild skills/review/core/
   python3 tools/bundle_core.py --check  exit 1 and list every difference (CI)
@@ -47,6 +48,10 @@ def _files(base: Path, entries: list[Path]) -> dict[Path, Path]:
     return found
 
 
+def _executable(path: Path) -> bool:
+    return bool(path.stat().st_mode & 0o111)
+
+
 def differences(root: Path) -> list[str]:
     source = _files(root, SOURCES)
     bundle_dir = root / BUNDLE
@@ -61,6 +66,8 @@ def differences(root: Path) -> list[str]:
             problems.append(f"not in the source: {(BUNDLE / path).as_posix()}")
         elif source[path].read_bytes() != bundled[path].read_bytes():
             problems.append(f"differs from the source: {(BUNDLE / path).as_posix()}")
+        elif _executable(source[path]) != _executable(bundled[path]):
+            problems.append(f"executable bit differs: {(BUNDLE / path).as_posix()}")
     return problems
 
 
@@ -72,6 +79,7 @@ def build(root: Path) -> None:
         target = bundle_dir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
+        shutil.copymode(path, target)  # Git keeps the executable bit (shebang)
 
 
 def main(argv: list[str]) -> int:
@@ -84,6 +92,11 @@ def main(argv: list[str]) -> int:
         help="repository root (default: this repository)",
     )
     args = parser.parse_args(argv)
+    missing = [p.as_posix() for p in SOURCES if not (args.root / p).exists()]
+    if missing:  # never build or accept a bundle without its parts
+        for path in missing:
+            print(f"source missing: {path}")
+        return 2
     if args.check:
         problems = differences(args.root)
         for problem in problems:
