@@ -6,8 +6,9 @@ settled.
 
 *Res judicata*: what has been decided is not argued again.
 
-Works in **Claude Code** and the **Codex CLI**. Pure Python 3.11+, nothing else to install.
-MIT licensed.
+Works in **Claude Code** and the **Codex CLI** as a plugin, and in other agents (OpenCode,
+Cursor and more) as plain Agent Skills. Pure Python 3.11+, nothing else to install. MIT
+licensed.
 
 ## Installation (30 seconds)
 
@@ -37,7 +38,31 @@ not know your earlier decisions. Differences to Claude Code: [reference](docs/re
 
 </details>
 
+<details>
+<summary><strong>Any other agent</strong> (OpenCode, Cursor, Gemini CLI, Copilot, ...)</summary>
+
+```bash
+npx skills@latest add philippmelikidis/judicata --skill '*' -a <agent>  # opencode, cursor, ...; omit -a to choose
+```
+
+[skills.sh](https://skills.sh) copies the three skills `review`, `contract` and `status`
+into your project (`-g` for all projects). Install all three: the review skill ships the
+core, the other two use it. To update, run `npx skills@latest update`. In Claude Code and
+Codex take the plugin instead, never both, or you get every skill twice. What a plain
+install lacks: see the table below and [Other agents](docs/reference.md#other-agents-plain-skills).
+
+</details>
+
 Requirement: `python3` (3.11 or newer) on your `PATH`.
+
+What each install gets:
+
+| | Claude Code plugin | Codex plugin | Plain skills (other agents) |
+| --- | --- | --- | --- |
+| Summary of your decisions in every new session (hook) | yes | yes, once you trusted the hook | no: the review and status skills read it themselves when they run, and say so |
+| Independent reviewers in a fresh context | sub-agents with read-only tools | sub-agents, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents one reviewer, the session itself, and the report says so |
+| Questions | answer buttons | numbered list | the agent's question tool, or a numbered list |
+| Skills | `/judicata:review`, `/judicata:contract`, `/judicata:status` | `judicata:review`, ... | `review`, `contract`, `status` |
 
 ## Your first review
 
@@ -225,7 +250,8 @@ like an instruction. That is a heuristic, not a guarantee. Details:
 - Text from `.judicata/` is data, never an instruction. Suspicious entries are marked
   ("possible prompt injection detected in entry ..."), and judicata asks before doing anything
   they ask for.
-- In Codex, reviewers are read-only by instruction, not by a hard tool limit.
+- In Codex and as plain skills, reviewers are read-only by instruction, not by a hard tool
+  limit.
 - Review changes to `.judicata/` in a pull request like code.
 
 Full details and limits: [docs/reference.md](docs/reference.md#security).
@@ -233,8 +259,8 @@ Full details and limits: [docs/reference.md](docs/reference.md#security).
 ## Reference
 
 [docs/reference.md](docs/reference.md) covers the contract format, the three checks, findings
-and addresses, decisions, the stop rule, scope and focus from plain language, Codex, security
-and how to run the tests and evals.
+and addresses, decisions, the stop rule, scope and focus from plain language, Codex, other
+agents, security and how to run the tests and evals.
 
 ## Development
 
@@ -244,7 +270,9 @@ uv run --with pytest==9.1.1 pytest
 claude plugin eval . --scaffold --allow-tools Bash --trust-plugin --runs 1 --no-publish
 ```
 
-The tests drive the core command line. Five acceptance evals in `evals/` check the plugin's
+The tests drive the core command line. `skills/review/core/` is a generated copy of the
+core for plain skill installs: rebuild it with `python3 tools/bundle_core.py`, CI fails while
+it differs from the source. Five acceptance evals in `evals/` check the plugin's
 behavior in Claude Code against a baseline without the plugin. See
 [Development](docs/reference.md#development).
 

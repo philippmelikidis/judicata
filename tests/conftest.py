@@ -20,6 +20,9 @@ class Project:
         # or machine that got the same repository.
         self.state_dir = state_dir
         self.env: dict[str, str | None] = {}
+        # The core to run: the source by default, a bundled copy for installs
+        # as plain skills (test_skills_install.py).
+        self.script = SCRIPT
 
     def run(self, *args: str, stdin=None) -> tuple[int, dict]:
         """Run the core and return (exit code, parsed JSON from stdout).
@@ -41,7 +44,7 @@ class Project:
             else:
                 env[key] = value
         proc = subprocess.run(
-            [sys.executable, str(SCRIPT), *args],
+            [sys.executable, str(self.script), *args],
             check=False,
             capture_output=True,
             timeout=60,
@@ -77,7 +80,7 @@ class Project:
             stdin = json.dumps(stdin).encode("utf-8")
         env = {**os.environ, "JUDICATA_STATE_DIR": str(self.state_dir)}
         proc = subprocess.run(
-            [sys.executable, str(SCRIPT), "hook", event],
+            [sys.executable, str(self.script), "hook", event],
             check=False,
             capture_output=True,
             timeout=60,

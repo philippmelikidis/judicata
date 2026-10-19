@@ -24,4 +24,6 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.0
         with:
           python-version: "3.11"
+      - name: bundled core in skills/review/core matches the source
+        run: python3 tools/bundle_core.py --check
       - run: uv run --with pytest==9.1.1 pytest

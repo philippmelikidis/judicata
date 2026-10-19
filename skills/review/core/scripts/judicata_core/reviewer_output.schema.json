@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/philippmelikidis/judicata/schemas/reviewer-output/1",
+  "title": "judicata reviewer output",
+  "description": "What one reviewer run returns: one verdict per judgment criterion of the round, and findings outside the contract. Paths are relative to the project root.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "criteria"
+  ],
+  "properties": {
+    "criteria": {
+      "description": "Exactly one verdict for every judgment criterion you were given.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/verdict"
+      }
+    },
+    "findings": {
+      "description": "Problems outside the contract: places in scope with a problem that no criterion covers. One entry per problem and place.",
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  },
+  "$defs": {
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "passed",
+        "reason",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "description": "The criterion id, exactly as given.",
+          "type": "string",
+          "minLength": 1
+        },
+        "passed": {
+          "description": "true if the artifact meets the criterion, false if not.",
+          "type": "boolean"
+        },
+        "reason": {
+          "description": "One line: why it passes or fails.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "evidence": {
+          "description": "Places that support the verdict. At least one when passed is false.",
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/location"
+          }
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "line",
+        "quote"
+      ],
+      "properties": {
+        "file": {
+          "description": "Path of an existing file, relative to the project root.",
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "description": "1-based line number the quote starts at (within 5 lines).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "quote": {
+          "description": "Verbatim text from the file at that line.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "finding": {
+      "description": "A finding outside the contract.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "severity",
+        "file",
+        "line",
+        "quote",
+        "summary"
+      ],
+      "properties": {
+        "category": {
+          "description": "correctness, security or factual for real errors (wrong result, vulnerability, false statement); clarity, style, maintainability or other for everything else.",
+          "type": "string",
+          "enum": [
+            "correctness",
+            "security",
+            "factual",
+            "clarity",
+            "style",
+            "maintainability",
+            "other"
+          ]
+        },
+        "severity": {
+          "description": "Proposed severity. blocker only for correctness, security or factual with a concrete scenario in evidence. The core lowers it by its rules.",
+          "type": "string",
+          "enum": [
+            "blocker",
+            "should-fix",
+            "note"
+          ]
+        },
+        "file": {
+          "description": "Path of an existing file inside the contract's scope, relative to the project root.",
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "description": "1-based line number the quote starts at (within 5 lines).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "symbol": {
+          "description": "The enclosing function, method or class, qualified like Parser.parse. Leave it out for Markdown, prose and file-level places.",
+          "type": "string",
+          "maxLength": 200
+        },
+        "quote": {
+          "description": "Verbatim text from the file at that line.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "summary": {
+          "description": "One line: what is wrong.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "evidence": {
+          "description": "The concrete scenario: input or state that leads to the wrong result, the attack, or why the statement is false. Without it the finding is at most a note.",
+          "type": "string",
+          "maxLength": 1000
+        }
+      }
+    }
+  }
+}
