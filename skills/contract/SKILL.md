@@ -110,9 +110,10 @@ Render `contract` readably:
 5. Verifier: `model` (`inherit` means the model of the user's chat) and at most `max_runs`
    runs per round that try to refute blockers before they hold up done.
 
-In this version of judicata the stop gate, the verifier and the `references` check are not
-active yet: their settings are stored and shown, but nothing warns, blocks or verifies, and a
-`references` criterion stays pending. Say so in one line below the stop rule and verifier.
+In this version of judicata the stop gate warns, but `block` only warns too, and the verifier
+and the `references` check are not active yet: their settings are stored and shown, but
+nothing verifies, and a `references` criterion stays pending. Say so in one line below the
+stop rule and verifier.
 
 If `status` is `changed`, say that the file was edited outside judicata and differs from the
 recorded version `latest_version`, and that reviews refuse it (`contract_edited`) until the
@@ -259,8 +260,9 @@ always as the first option with "(Recommended)" in its label, so that Enter take
      `{"model": "sonnet", "max_runs": 5}`. The verifier tries to refute each blocker from a
      judgment criterion or outside the contract before it holds up done.
    Free answers are fine: `models` has one model for all reviewers or one per reviewer,
-   `max_runs` is a whole number of at least 1. In this version the gate and the verifier are
-   only stored and take no effect yet; say so in one line with the question.
+   `max_runs` is a whole number of at least 1. In this version the gate warns in both modes
+   (blocking comes later) and the verifier is only stored and takes no effect yet; say so in
+   one line with the question.
 
 5. **Store.** Put the answers into the draft and store it:
 

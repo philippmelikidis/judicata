@@ -7,7 +7,9 @@ not above the Git root) and prints
   {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "..."}}
 
 Without .judicata/ it prints nothing. It always exits 0: a hook must never
-disturb the session, a broken ledger becomes a line in the context.
+disturb the session, a broken ledger becomes a line in the context. It also
+records when the session started, outside the project (started.py), for the
+stop gate in sessions without a transcript.
 
 session summary returns the same context in the JSON envelope, for hosts
 without hooks (judicata installed as plain skills): the review and status
@@ -33,6 +35,7 @@ Every text from the repository is cleaned (untrusted.clean), every flagged
 entry starts with untrusted.mark().
 """
 
+import contextlib
 import json
 import os
 import shlex
@@ -40,7 +43,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import contract, ledger, rounds, states, status, untrusted, versions
+from . import contract, ledger, rounds, started, states, status, untrusted, versions
 from .errors import JudicataError
 from .project import STATE_DIR, Project
 
@@ -59,9 +62,14 @@ def main(argv: list[str]) -> int:
         event = EVENTS.get(argv[0]) if argv else None
         if event is None:
             return 0
-        root = find_root(_cwd(_read_input()))
+        hook_input = read_input()
+        root = find_root(start_dir(hook_input))
         if root is None:
             return 0
+        # the session start for the stop gate (started.py); no marker: the
+        # gate relies on the transcript
+        with contextlib.suppress(Exception):
+            started.record(root, hook_input.get("session_id"))
         text = _safe_context(root)
         payload = {
             "hookSpecificOutput": {"hookEventName": event, "additionalContext": text}
@@ -99,7 +107,8 @@ def _safe_context(root: Path) -> str:
         )
 
 
-def _read_input() -> dict:
+def read_input() -> dict:
+    """The hook input (JSON object on stdin), {} when there is none."""
     try:
         if sys.stdin is None or sys.stdin.isatty():
             return {}
@@ -110,7 +119,8 @@ def _read_input() -> dict:
     return value if isinstance(value, dict) else {}
 
 
-def _cwd(hook_input: dict) -> Path | None:
+def start_dir(hook_input: dict) -> Path | None:
+    """Where the session runs: cwd of the input, CLAUDE_PROJECT_DIR, else here."""
     for value in (hook_input.get("cwd"), os.environ.get("CLAUDE_PROJECT_DIR")):
         if isinstance(value, str) and value:
             return Path(value)
