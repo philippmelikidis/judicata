@@ -3,6 +3,8 @@ name: contract
 description: Show the judicata contract of a project, create the first one in a short interview from a template (code, docs, prose), or change it when the user explicitly asks. Use for /judicata:contract, when the user asks what the contract or the criteria are, when they ask to change, add, drop or relax a criterion, the paths, the reviewers or the stop rule, and when a judicata review finds no contract.
 license: MIT
 compatibility: Needs python3 3.11 or newer. Install all three judicata skills (review, contract, status) together; the review skill ships the core.
+metadata:
+  internal: true
 ---
 
 # judicata contract

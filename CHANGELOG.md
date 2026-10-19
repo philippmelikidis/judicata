@@ -6,6 +6,8 @@ version users get: Claude Code updates the plugin only when it goes up.
 
 ## [Unreleased]
 
+- Plain skill installs (`npx skills add philippmelikidis/judicata`) now get `judicata-review`, `judicata-contract` and `judicata-status`, so the skills no longer collide with commands or other skills of the host. They are generated from the plugin skills and checked in CI; the plugin keeps `judicata:review`, `judicata:contract` and `judicata:status` without duplicates in Claude Code and Codex. If you installed the plain skills of 0.1, remove the old `review`, `contract` and `status` folders after updating.
+
 ## [0.1.0] - 2026-10-19
 
 First public release.

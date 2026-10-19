@@ -3,6 +3,8 @@ name: status
 description: Show where every judicata contract of a project stands (done or not, open blockers and should-fix, accepted risks and rejections with their reasons, the round within the current pass and the open blockers per round). Use for /judicata:status and whenever the user asks about the state of judicata reviews in a project with a .judicata/ directory, in any language, for example "what is still open?", "was ist noch offen?", "where do we stand?", "which risks did we accept?".
 license: MIT
 compatibility: Needs python3 3.11 or newer. Install all three judicata skills (review, contract, status) together; the review skill ships the core.
+metadata:
+  internal: true
 ---
 
 # judicata status

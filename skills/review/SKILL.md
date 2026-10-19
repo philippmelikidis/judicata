@@ -3,6 +3,8 @@ name: review
 description: Review an artifact (code, a diff, a module, documentation, prose) against its judicata contract and say whether it is done or what blocks it. Use for /judicata:review. Also use it without the command whenever the project has a .judicata/ directory and the user asks for any review, re-review or completion check, in any language, for example "review this again", "review das nochmal", "is this done?", "ist das fertig?", "check the software for bugs", "prüf das auf Bugs", "look at the ledger module", "review my changes against main". In such a project use this skill instead of reviewing freely, because the contract and the recorded decisions apply.
 license: MIT
 compatibility: Needs python3 3.11 or newer. Install all three judicata skills (review, contract, status) together; the review skill ships the core.
+metadata:
+  internal: true
 ---
 
 # judicata review
