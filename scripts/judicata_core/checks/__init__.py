@@ -10,9 +10,15 @@ scope is a scope.Scope; scope.files lists the files of the round.
 
 Kinds without run() are left to the reviewers and stay pending until then.
 PENDING_REASON says why a criterion of the kind has no result; for command it
-means the commands were not approved (see approvals.py).
+means the commands were not approved (see approvals.py), for references that the
+check is not available yet.
 """
 
-from . import command, judgment, pattern
+from . import command, judgment, pattern, references
 
-KINDS = {"command": command, "pattern": pattern, "judgment": judgment}
+KINDS = {
+    "command": command,
+    "pattern": pattern,
+    "judgment": judgment,
+    "references": references,
+}

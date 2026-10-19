@@ -23,10 +23,16 @@ ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 # a model name: inherit, opus, claude-opus-4-1, sonnet[1m], vendor/model:tag
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/\[\]-]{0,99}$")
 
-TOP_KEYS = {"name", "template", "paths", "reviewers", "stop", "criteria"}
+TOP_KEYS = {"name", "template", "paths", "reviewers", "stop", "verifier", "criteria"}
 CRITERION_KEYS = {"id", "text", "check", "required"}
 DEFAULT_REVIEWERS = {"count": 2, "models": ["inherit"]}
-DEFAULT_STOP = {"max_rounds": 5, "stall_rounds": 2}
+GATES = ("warn", "block")
+DEFAULT_STOP = {"max_rounds": 5, "stall_rounds": 2, "gate": "warn"}
+DEFAULT_VERIFIER = {"model": "inherit", "max_runs": 5}
+# Fields added in 0.2 count in the contract hash only when they differ from
+# their default, so a contract written by 0.1 keeps its hash (and its recorded
+# version) unchanged.
+ADDED_IN_0_2 = {"stop": {"gate": "warn"}, "verifier": DEFAULT_VERIFIER}
 
 
 @dataclass(frozen=True)
@@ -46,6 +52,7 @@ class Contract:
     paths: list[str]
     reviewers: dict
     stop: dict
+    verifier: dict
     criteria: list[Criterion]
     hash: str
     file: str = field(compare=False)
@@ -72,6 +79,7 @@ def to_json(current: Contract) -> dict:
         "paths": list(current.paths),
         "reviewers": dict(current.reviewers),
         "stop": dict(current.stop),
+        "verifier": dict(current.verifier),
         "criteria": [criterion_json(c) for c in current.criteria],
         "hash": current.hash,
     }
@@ -176,6 +184,19 @@ def parse(raw: dict, path: Path) -> Contract:
     for key in ("max_rounds", "stall_rounds"):
         if not _is_int(stop.get(key)) or stop[key] < 1:
             problem(f"stop.{key}", "must be a whole number of at least 1")
+    if stop.get("gate") not in GATES:
+        problem("stop.gate", f"must be one of {', '.join(GATES)}")
+
+    verifier = _section(raw, "verifier", DEFAULT_VERIFIER, problem)
+    if not isinstance(verifier.get("model"), str) or not MODEL_RE.match(
+        verifier["model"]
+    ):
+        problem(
+            "verifier.model",
+            "must be a model name (letters, digits and . _ - : / [ ])",
+        )
+    if not _is_int(verifier.get("max_runs")) or verifier["max_runs"] < 1:
+        problem("verifier.max_runs", "must be a whole number of at least 1")
 
     criteria: list[Criterion] = []
     raw_criteria = raw.get("criteria")
@@ -238,6 +259,7 @@ def parse(raw: dict, path: Path) -> Contract:
         "paths": paths,
         "reviewers": {"count": count, "models": models},
         "stop": {k: stop[k] for k in DEFAULT_STOP},
+        "verifier": {k: verifier[k] for k in DEFAULT_VERIFIER},
         "criteria": [c.hash for c in criteria],
     }
     return Contract(
@@ -246,10 +268,27 @@ def parse(raw: dict, path: Path) -> Contract:
         paths=list(paths),
         reviewers=body["reviewers"],
         stop=body["stop"],
+        verifier=body["verifier"],
         criteria=criteria,
-        hash=_hash(body),
+        hash=_hash(_without_new_defaults(body)),
         file=str(path),
     )
+
+
+def _without_new_defaults(body: dict) -> dict:
+    """The hashed form: fields added in 0.2 left out while at their default."""
+    hashed = dict(body)
+    for section, defaults in ADDED_IN_0_2.items():
+        kept = {
+            k: v
+            for k, v in body[section].items()
+            if k not in defaults or v != defaults[k]
+        }
+        if kept:
+            hashed[section] = kept
+        else:
+            del hashed[section]
+    return hashed
 
 
 def _section(raw: dict, key: str, defaults: dict, problem) -> dict:

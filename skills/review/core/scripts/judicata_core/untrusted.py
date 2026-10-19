@@ -624,10 +624,15 @@ def unmet(contract_name: str, items) -> list[dict]:
 
 
 def contract(current) -> list[dict]:
-    """Warnings for a contract file: its paths, models and every criterion."""
+    """Warnings for a contract file: its paths, models (reviewers and verifier)
+    and every criterion."""
     found = collect(
         f"contract file {current.name}",
-        {"paths": list(current.paths), "models": current.reviewers.get("models")},
+        {
+            "paths": list(current.paths),
+            "models": current.reviewers.get("models"),
+            "verifier.model": current.verifier.get("model"),
+        },
     )
     for item in current.criteria:
         found += criterion(
