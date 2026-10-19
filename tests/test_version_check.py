@@ -129,3 +129,65 @@ def test_uncommitted_changes_count_too(tmp_path):
     root = released(tmp_path)
     write(root, "skills/review/SKILL.md", "new\n")
     assert check(root).returncode == 1
+
+
+def test_moving_a_shipped_file_out_counts(tmp_path):
+    root = released(tmp_path)
+    (root / "docs").mkdir()
+    git(root, "mv", "scripts/core.py", "docs/core.py")
+    commit(root)
+    assert check(root).returncode == 1
+
+
+def test_a_newer_tag_on_another_branch_is_ignored(tmp_path):
+    root = released(tmp_path)
+    git(root, "checkout", "-q", "-b", "other")
+    manifest(root, "0.2.0")
+    commit(root)
+    git(root, "tag", "v0.2.0")
+    git(root, "checkout", "-q", "main")
+    write(root, "README.md", "docs only\n")
+    commit(root)
+    assert check(root).returncode == 0
+
+
+def test_a_path_with_spaces_is_not_split(tmp_path):
+    root = released(tmp_path)
+    write(root, "docs/release scripts/example.md", "x\n")
+    commit(root)
+    assert check(root).returncode == 0
+
+
+def test_an_unreleased_section_with_only_headings_or_comments_is_empty(tmp_path):
+    root = released(tmp_path)
+    write(root, "scripts/core.py", "print(2)\n")
+    write(
+        root,
+        "CHANGELOG.md",
+        CHANGELOG.format(unreleased="\n### Added\n\n<!-- add entries here -->\n"),
+    )
+    commit(root)
+    assert check(root).returncode == 1
+
+
+def test_an_unreleased_entry_left_over_from_the_release_does_not_count(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+    manifest(root, "0.1.0")
+    write(root, "scripts/core.py", "print(1)\n")
+    write(root, "CHANGELOG.md", CHANGELOG.format(unreleased="\n- Fix A.\n"))
+    commit(root)
+    git(root, "tag", "v0.1.0")
+    write(root, "scripts/core.py", "print(2)\n")
+    commit(root)
+    assert check(root).returncode == 1
+
+
+def test_a_prerelease_version_does_not_crash(tmp_path):
+    root = released(tmp_path)
+    write(root, "scripts/core.py", "print(2)\n")
+    manifest(root, "0.2.0-rc.1")
+    commit(root)
+    result = check(root)
+    assert result.returncode == 0, result.stdout + result.stderr
