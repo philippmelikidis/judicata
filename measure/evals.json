@@ -1,0 +1,21 @@
+{
+  "01-rejected-finding": {
+    "done": true,
+    "bugs": [],
+    "decided": [
+      {"id": "mean-empty", "file": "src/stats.py", "line": 7, "keywords": ["mean([])", "empty"]}
+    ]
+  },
+  "02-clean-done": {"done": true, "bugs": [], "decided": []},
+  "03-required-blocker": {
+    "done": false,
+    "bugs": [{"id": "todo", "file": "src/shop/cart.py", "line": 6, "keywords": ["TODO"]}],
+    "decided": []
+  },
+  "04-not-converged": {
+    "done": false,
+    "bugs": [{"id": "todo", "file": "src/shop/cart.py", "line": 6, "keywords": ["TODO"]}],
+    "decided": []
+  },
+  "05-module-scope": {"done": true, "bugs": [], "decided": []}
+}

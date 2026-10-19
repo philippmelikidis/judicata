@@ -269,3 +269,7 @@ claude plugin eval . --scaffold --allow-tools Bash --trust-plugin --runs 1 --no-
 (sandboxed: on Linux this needs `bwrap` and `socat` on `PATH`), `--case '<name glob>'` runs
 one case, `--ablation none` skips the baseline. Results land in `evals/results/` (ignored by
 Git).
+
+`measure/measure.py` compares judicata with plain Claude Code over the eval cases and small repositories with
+seeded bugs (re-raise rate over two sessions, rounds to convergence, blocker precision and recall), with a cost
+cap per run. Method, command and results: [measurement.md](measurement.md).

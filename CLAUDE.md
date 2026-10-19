@@ -428,6 +428,18 @@ case one LLM grader on the last answer and `tool_used: Skill` (with ablation it 
 The eval has no AskUserQuestion: the prompts therefore say "no follow-up questions, leave decisions open", and the
 contracts have no command criteria (no approval needed) and one reviewer.
 
+**Measurement** (`measure/`, #9): `measure/measure.py` compares judicata with plain Claude Code for the README
+numbers, maintainers only, not shipped, not in CI. Corpus: the eval cases (judicata arm via `evals/_lib/scaffold.py`,
+plain arm only the artifact; truth in `measure/evals.json`) and seeded cases `measure/seeded/<case>/` (`project/`
+plus `case.json` with bug and decoy mutations, applied in a throwaway folder). Both arms run `claude -p`
+(`--setting-sources project,local --strict-mcp-config`, `dontAsk`, Bash in Claude Code's sandbox, every shell
+command only with `--allow-bash`, Edit/Write denied), the
+judicata arm with `--plugin-dir`; seeded trials play rounds (fresh session, decisions via `--resume`, seeded bugs
+fixed, next fresh session). Metrics only from the `findings` block every review prompt asks for. Cost cap:
+`--max-budget-usd` per call from `--max-run-usd` and the rest of `--max-cost-usd` (exit 2 when reached). Raw
+results to `--raw-dir` outside the repo, summary into `docs/measurement.md` below its marker. Smoke test
+`tests/test_measure.py` with a fake `claude` (`--claude`). Method and limits: `docs/measurement.md`.
+
 ## Agent skills
 
 ### Issue tracker
