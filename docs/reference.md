@@ -66,7 +66,10 @@ reviewers with a fresh context and read-only tools, by default on the model of y
 they agree, the result stands. If they disagree, you decide once, and your decision holds in
 later rounds as long as the criterion and the files it was about are unchanged. Set the number
 and models in the contract (`[reviewers]`) or just say so for one review ("only one reviewer",
-"use Opus and Sonnet"); that does not change the contract.
+"use Opus and Sonnet"); that does not change the contract. Every place a reviewer cites is
+checked: the quote must read exactly at the cited file and line (only whitespace and line
+breaks may differ). An answer with an invented or misplaced quote goes back to the reviewer
+once with the reason, a second invalid answer drops that reviewer for the round.
 
 The reviewers also report findings outside the contract. Each one is tied to an address that
 survives moved lines: the class and function around the line in Python, the heading path and

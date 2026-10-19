@@ -188,11 +188,14 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `review submit --round R --run X` (stdin or `--file`) validates against `reviewer_output.schema.json` (a subset
   of JSON Schema, validator in `schema.py`), then semantically: every judgment criterion exactly once, a failure
   needs a place within the contract's scope (`scope.py`, `paths` is in the plan), every place lies in a project
-  file outside `.git/` and `.judicata/`, the line exists, the quote at most 5 lines away. Invalid =
+  file outside `.git/` and `.judicata/`, the line exists, the quote starts exactly at that line (`_quote_lines`:
+  file lines joined with spaces, whitespace squashed on both sides, otherwise verbatim; a quote may start inside the
+  line and run on; the rejection names the lines it does start at, nearest first). Invalid =
   `invalid_reviewer_output` (`details.retry`), the second rejection discards the run. `review discard` for runs
   without an answer, `review verdicts` shows the consensus, `review decide` stores the user's decision. Findings
-  (`$defs/finding`) lie within the scope (without `exclude`, like verdicts), the line is aligned to the quote
-  (`_anchor`, whole quote first); `review findings` shows their consensus. The skill always plans reviewers, also
+  (`$defs/finding`) lie within the scope (without `exclude`, like verdicts), stored at the cited line;
+  `review findings` shows their consensus. Lines are split at line breaks only (`address.split_lines`: `\n`,
+  `\r\n`, `\r`, never form feeds or Unicode separators), as in the pattern check. The skill always plans reviewers, also
   without judgment criteria (then 1). `review plan` includes `decisions` (`decisions_for`: rejected/accepted within
   the round's scope and focus, criterion findings only from judgment criteria of the round with the same hash, at
   most 100, `decisions_count`). Criteria and decisions are defused (criterion text up to 400 characters) and carry
