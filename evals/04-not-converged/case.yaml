@@ -1,0 +1,51 @@
+schema_version: "1.0"
+name: rounds-without-progress-do-not-converge
+description: >
+  Rounds without progress end as "not converged". The scaffold leaves two
+  closed rounds in the ledger, each with one open blocker (required CODE-1,
+  a TODO in src/shop/cart.py), and nothing changed since. The first round of
+  a pass is only the starting value, so the third round without progress is
+  the one that ends the pass as not_converged (stall_rounds 2). The prompt
+  names no files: rounds count per contract and scope, and the earlier rounds
+  covered the whole contract.
+tags: [v0.1, stop-rule]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: |
+    Please review this again. I can't answer follow-up questions right now,
+    so leave anything that needs my decision open.
+  max_turns: 40
+  timeout_seconds: 900
+  allowed_tools: [Skill, Agent, Bash, Read, Glob, Grep]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: third-round-closed
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_closed"'
+    match: "count:3"
+  - name: not-converged
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_closed",[^\n]*"outcome": ?"not_converged",[^\n]*"round_in_pass": ?3'
+  - name: no-decision-made-for-the-user
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"finding_decided"'
+    match: not_contains
+  - name: reports-not-converged
+    type: llm
+    criteria: |
+      This was the third review in a row with the same open blocker (required
+      criterion CODE-1: a TODO marker in src/shop/cart.py), and nothing
+      changed in between.
+      PASS only if the reply says plainly that the review does not converge
+      (no progress over the last rounds, for example "not converged"), names
+      the open blocker CODE-1 or the TODO in src/shop/cart.py, and suggests
+      that the user decides it (fix, reject or accept the risk) or changes the
+      approach instead of just running another round. It must not call the
+      code done.

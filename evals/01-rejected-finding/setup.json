@@ -1,0 +1,45 @@
+{
+  "contract": {
+    "name": "code",
+    "template": "code",
+    "paths": ["src/**"],
+    "reviewers": {"count": 1, "models": ["inherit"]},
+    "stop": {"max_rounds": 5, "stall_rounds": 2},
+    "criteria": [
+      {
+        "id": "CODE-1",
+        "text": "No TODO or FIXME markers left in the code",
+        "check": "pattern",
+        "required": true,
+        "forbid": "\\b(TODO|FIXME)\\b"
+      }
+    ]
+  },
+  "rounds": [
+    {
+      "reviewer": {
+        "criteria": [],
+        "findings": [
+          {
+            "category": "correctness",
+            "severity": "blocker",
+            "file": "src/stats.py",
+            "line": 7,
+            "symbol": "mean",
+            "quote": "return 0.0",
+            "summary": "mean([]) returns 0.0 instead of raising, so empty input looks like a real mean of 0.",
+            "evidence": "mean([]) returns 0.0; a caller cannot tell an empty week from a week whose values average 0."
+          }
+        ]
+      },
+      "decide": [
+        {
+          "category": "correctness",
+          "decision": "reject",
+          "reason": "0.0 for an empty list is intended: the weekly report shows it as no data.",
+          "reopen_if": "a caller needs to tell empty input from a real mean of 0"
+        }
+      ]
+    }
+  ]
+}

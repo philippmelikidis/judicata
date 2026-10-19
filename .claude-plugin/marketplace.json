@@ -1,0 +1,16 @@
+{
+  "name": "judicata",
+  "owner": {
+    "name": "Philipp Melikidis"
+  },
+  "metadata": {
+    "description": "Marketplace for the judicata plugin."
+  },
+  "plugins": [
+    {
+      "name": "judicata",
+      "source": "./",
+      "description": "Reviews that converge: a frozen contract defines when an artifact is done, and a ledger in the repo remembers what was already decided."
+    }
+  ]
+}

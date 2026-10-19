@@ -1,0 +1,36 @@
+# judicata template: a proposal for the contract interview, not a contract.
+# Values listed in "fill" are examples; the interview asks the user for the real ones.
+name = "prose"
+description = "Prose (letters, essays, chapters): claims are backed, length and style rules hold, the author's voice stays."
+priority = 3
+suggest_for = ["*.md", "*.markdown", "*.txt", "*.tex", "*.org"]
+
+[[criteria]]
+id = "PROSE-1"
+text = "Every claim is backed by a source or clearly marked as the author's own conclusion"
+check = "judgment"
+required = true
+
+[[criteria]]
+id = "PROSE-2"
+text = "At most 400 words"
+check = "pattern"
+required = true
+max_words = 400
+fill = ["max_words", "text"]
+hint = "The length limit of this text, as words (max_words) or lines (max_lines). Ask the user; keep text and number in line. Drop the criterion if there is no limit."
+
+[[criteria]]
+id = "PROSE-3"
+text = "No em or en dashes"
+check = "pattern"
+required = true
+forbid = "[\u2014\u2013]"
+fill = ["forbid", "text"]
+hint = "One style rule per criterion as a regular expression the text must not contain (forbid) or must contain (require). Ask the user for their rules; drop the criterion if there are none."
+
+[[criteria]]
+id = "PROSE-4"
+text = "The author's voice is kept: wording, tone and point of view stay the author's own"
+check = "judgment"
+required = true

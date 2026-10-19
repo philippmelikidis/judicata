@@ -1,0 +1,13 @@
+{
+  "criteria": [
+    {
+      "id": "JUD-1",
+      "passed": true,
+      "reason": "Both functions do what their names say for the inputs the callers pass.",
+      "evidence": [
+        {"file": "src/app.py", "line": 2, "quote": "return a / b"}
+      ]
+    }
+  ],
+  "findings": []
+}

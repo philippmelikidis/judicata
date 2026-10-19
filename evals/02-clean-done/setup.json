@@ -1,0 +1,32 @@
+{
+  "contract": {
+    "name": "letter",
+    "template": "prose",
+    "paths": ["letter.md"],
+    "reviewers": {"count": 1, "models": ["inherit"]},
+    "stop": {"max_rounds": 5, "stall_rounds": 2},
+    "criteria": [
+      {
+        "id": "LETTER-1",
+        "text": "At most 250 words",
+        "check": "pattern",
+        "required": true,
+        "max_words": 250
+      },
+      {
+        "id": "LETTER-2",
+        "text": "No em or en dashes",
+        "check": "pattern",
+        "required": true,
+        "forbid": "[\u2014\u2013]"
+      },
+      {
+        "id": "LETTER-3",
+        "text": "The letter names the position it applies for",
+        "check": "judgment",
+        "required": true
+      }
+    ]
+  },
+  "rounds": []
+}

@@ -1,0 +1,47 @@
+schema_version: "1.0"
+name: failed-required-criterion-is-a-blocker
+description: >
+  A failed required criterion is a blocker. The contract forbids TODO markers
+  in src/ (CODE-1, required) and src/shop/cart.py still has one. The review
+  must not call the code done: the round closes with an open blocker for
+  CODE-1 at that place, and nothing is fixed or decided for the user.
+tags: [v0.1, outcome]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: |
+    Is the code in src done? I can't answer follow-up questions right now, so
+    leave anything that needs my decision open.
+  max_turns: 40
+  timeout_seconds: 900
+  allowed_tools: [Skill, Agent, Bash, Read, Glob, Grep]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: round-not-done
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_closed",[^\n]*"outcome": ?"continue",[^\n]*"open_blockers": ?[1-9]'
+  - name: blocker-recorded-for-code-1
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"finding_recorded",[^\n]*"category": ?"CODE-1",[^\n]*"severity": ?"blocker"'
+  - name: no-decision-made-for-the-user
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"finding_decided"'
+    match: not_contains
+  - name: artifact-unchanged
+    type: regex
+    target: {source: file, path: src/shop/cart.py}
+    pattern: '^"""Shopping cart totals\."""\n\n\ndef total\(items\):\n    """Sum of price times quantity over all items, in cents\."""\n    # TODO: decide what happens with negative quantities\n    return sum\(item\["price"\] \* item\["qty"\] for item in items\)\n$'
+  - name: reports-blocker
+    type: llm
+    criteria: |
+      The contract of this project has a required criterion CODE-1: no TODO
+      or FIXME markers in the code. src/shop/cart.py line 6 has a TODO.
+      PASS only if the reply says the code is not done, names CODE-1 (or the
+      rule against TODO markers) as a blocker and points at src/shop/cart.py
+      (the line or the TODO text). The reply must not claim the code is done.

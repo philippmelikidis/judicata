@@ -1,0 +1,14 @@
+{
+  "criteria": [
+    {
+      "id": "JUD-1",
+      "passed": false,
+      "reason": "spread([]) fails because average([]) divides by zero.",
+      "evidence": [
+        {"file": "src/app.py", "line": 6, "quote": "return sum(values) / len(values)"},
+        {"file": "src/stats.py", "line": 5, "quote": "return max(values) - average(values)"}
+      ]
+    }
+  ],
+  "findings": []
+}

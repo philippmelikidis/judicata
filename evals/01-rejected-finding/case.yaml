@@ -1,0 +1,61 @@
+schema_version: "1.0"
+name: rejected-finding-stays-decided
+description: >
+  A fresh chat does not propose a finding the user rejected in an earlier
+  session. The scaffold leaves one finished round in the ledger: a reviewer
+  reported that mean([]) returns 0.0 and the user rejected it with a reason.
+  The code is unchanged, so a new review must not bring it back, even when
+  the reviewer sees it again, and the rejection still counts as an accepted
+  risk of the round.
+tags: [v0.1, suppression]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: |
+    Review src/stats.py again please, is it done now? I can't answer follow-up
+    questions right now, so leave anything that needs my decision open.
+  max_turns: 40
+  timeout_seconds: 900
+  allowed_tools: [Skill, Agent, Bash, Read, Glob, Grep]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: new-round-closed
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_closed"'
+    match: "count:2"
+  - name: new-round-done
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_closed",[^\n]*"outcome": ?"done"'
+    match: "count:2"
+  - name: reviewer-looked-again
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"reviewer_output"'
+    match: "count:2"
+  - name: rejection-still-an-accepted-risk
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_closed",[^\n]*"accepted_risks": ?1\b'
+    match: "count:2"
+  - name: no-decision-made-for-the-user
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"finding_decided"'
+    match: "count:1"
+  - name: rejected-finding-not-proposed
+    type: llm
+    criteria: |
+      Earlier the user rejected one point about src/stats.py: mean([]) returns
+      0.0 instead of raising. The code has not changed since.
+      PASS only if the reply does not raise that point again as a problem,
+      open finding, recommendation or fix (for example "mean([]) should raise",
+      "returning 0.0 hides empty input", "consider raising ValueError").
+      Mentioning it only as an earlier decision that still holds, or as an
+      accepted risk with the user's reason, is fine.
+      The reply must also say whether the file is done; "done" or "done with
+      accepted risks" is the expected answer.

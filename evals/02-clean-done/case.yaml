@@ -1,0 +1,36 @@
+schema_version: "1.0"
+name: clean-artifact-is-done
+description: >
+  A clean artifact is done. The contract of letter.md has two pattern criteria
+  and one judgment criterion, all required, and the letter meets all of them.
+  The review must close its round as done, with the judgment from a reviewer.
+tags: [v0.1, outcome]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: |
+    Ist mein Anschreiben letter.md fertig? Ich kann gerade keine Rückfragen
+    beantworten, lass offene Entscheidungen einfach offen.
+  max_turns: 40
+  timeout_seconds: 900
+  allowed_tools: [Skill, Agent, Bash, Read, Glob, Grep]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: round-done
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_closed",[^\n]*"outcome": ?"done"'
+  - name: judgment-passed
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"criterion_result",[^\n]*"criterion": ?"LETTER-3",[^\n]*"passed": ?true'
+  - name: reports-done
+    type: llm
+    criteria: |
+      The user asked (in German) whether the cover letter letter.md is done.
+      PASS only if the reply says clearly that it is done (fertig), names no
+      blocker, and is written in German. Small optional remarks are fine, as
+      long as the reply does not make "done" depend on them.

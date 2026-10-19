@@ -1,0 +1,24 @@
+{
+  "criteria": [
+    {
+      "id": "JUD-1",
+      "passed": true,
+      "reason": "The functions in scope do what their names say.",
+      "evidence": [
+        {"file": "src/app.py", "line": 2, "quote": "return a / b"}
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "category": "correctness",
+      "severity": "blocker",
+      "file": "src/shapes.py",
+      "line": 21,
+      "symbol": "ratio",
+      "summary": "ratio(1, 0) raises ZeroDivisionError.",
+      "evidence": "ratio(1, 0) divides by zero and raises instead of returning a result.",
+      "quote": "return a / b"
+    }
+  ]
+}

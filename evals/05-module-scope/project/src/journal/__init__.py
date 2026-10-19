@@ -1,0 +1,1 @@
+"""A tiny bookkeeping journal."""

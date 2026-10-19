@@ -1,0 +1,47 @@
+schema_version: "1.0"
+name: natural-language-scope
+description: >
+  Natural language gives the right scope. "Prüf das Modul ledger" means the
+  code module src/journal/ledger.py: not the whole contract (report.py has a
+  TODO that CODE-1 forbids, so a review of everything would not be done) and
+  not docs/ledger.md, which also matches the name. The round must be started
+  for exactly that file.
+tags: [v0.1, scope]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: |
+    Prüf das Modul ledger. Ich kann gerade keine Rückfragen beantworten, lass
+    offene Entscheidungen einfach offen.
+  max_turns: 40
+  timeout_seconds: 900
+  allowed_tools: [Skill, Agent, Bash, Read, Glob, Grep]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: round-for-the-module
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_started",[^\n]*"scope": ?\{"kind": ?"paths", ?"paths": ?\["src/journal/ledger\.py"\]'
+  - name: one-round-only
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_started"'
+    match: "count:1"
+  - name: module-done
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_closed",[^\n]*"outcome": ?"done"'
+  - name: reports-on-the-module
+    type: llm
+    criteria: |
+      The user asked (in German) to check the module "ledger". The project has
+      src/journal/ledger.py (the module), src/journal/report.py and
+      docs/ledger.md.
+      PASS only if the reply is about src/journal/ledger.py: it says that this
+      file (or the ledger module) was reviewed and gives a result for it. It
+      must not report problems in report.py or docs/ledger.md as part of the
+      result (mentioning that they were left out is fine). The reply is in
+      German.
