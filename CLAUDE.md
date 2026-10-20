@@ -317,13 +317,16 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
 - `gate.py` (stop gate, #12 warn mode): `judicata.py hook stop` (`cli.main` routes `hook stop` here, everything
   else to `session.main`), registered in `hooks/hooks.json` on `Stop` (Claude Code and Codex). Reads the hook input
   (`session.read_input`, `session.start_dir`, `session.find_root`), the transcript (`transcript_path`: round ids
-  after `--round` = the session's rounds, first `"timestamp"` = session start; host-agnostic regex over the raw
-  bytes, Claude Code and Codex rollouts) and the ledger. Per contract: (a) the session's latest round (by
-  `started_seq`) is not closed or its `Round.outcome` is not in `stop.ENDS` (focused rounds included), and no
-  later round of the contract is final; names open blockers from `status.show`; (b) the latest final round of
-  the contract, no round started after its `closed_seq`, files of its scope
-  (`assignment.scope(project, contract, round.only)`) with mtime at or after the session start (2 s slack), and
-  `revision.content_hash` of those files differs from `rounds.seen_content(round)`; names those files. Output
+  after `--round` or first in the core's `{"ok": true, "round": ...}` answer = the session's rounds, first
+  `"timestamp"` = session start; host-agnostic regexes over the raw bytes, Claude Code and Codex rollouts) and the
+  ledger. Per contract: (a) the session's latest round (by `started_seq`) is not closed or its `Round.outcome` is
+  not in `stop.ENDS` (focused rounds included), and no later final round covers it (`_covers`: same `stop.key` or
+  the whole contract); names open blockers from `status.show`; (b) per scope key the latest final round that no
+  later round covers: files of its scope (`assignment.scope(project, contract, round.only)`) with mtime at or after
+  the session start and its last check (`_seen_at`, 2 s slack), or a changed folder time (`_dirs`: parents of the
+  files and the fixed start of each path pattern, for removed files), and `revision.content_hash` of those files
+  differs from `rounds.seen_content(round)`; the hash covers the scope as a whole, so the line names the files
+  written in the session, not the differing ones. Output
   `{"systemMessage": "judicata: ..."}` in one line (at most 600 characters, repo text through `untrusted.clean`),
   never a decision; nothing without `.judicata/`, without a touched contract or on any error, exit always 0.
   Without a transcript (`claude -p --no-session-persistence`) the start comes from `started.recalled` and the

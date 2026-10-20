@@ -148,17 +148,18 @@ alone, when
   it ended in "continue", "required criteria not met" or a focused round, or it was not
   closed. The line names the open blockers. A later final review of the contract, also from
   another session, releases it.
-- files in a contract's scope changed during this session after its last finished review, and
-  no review ran since. The line names the changed files. Files written back unchanged and files
-  changed before the session started do not count.
+- files in a contract's scope were written or removed during this session after its last
+  finished review looked at them, their content differs from what it saw, and no review of
+  them ran since. The line names the files this session wrote. Files written back unchanged
+  do not count, and changes made before the session started alone do not either.
 
 Sessions that touched no contract, projects without `.judicata/` and any error give no output.
-The hook finds the session's reviews in the session transcript (the round ids after
-`--round`) and the session start in its first timestamp. Without a transcript
+The hook finds the session's reviews in the session transcript (the round ids in its
+judicata commands and answers) and the session start in its first timestamp. Without a transcript
 (`claude -p --no-session-persistence`) it uses the start the SessionStart hook recorded in your
 state directory (next to the approvals) and counts every review started since then, so
-parallel sessions in the same project see each other's reviews there. A deleted file alone is
-not noticed as a change. Plain skill installs have no hooks and no gate yet.
+parallel sessions in the same project see each other's reviews there. Plain skill installs
+have no hooks and no gate yet.
 
 ## Codex
 

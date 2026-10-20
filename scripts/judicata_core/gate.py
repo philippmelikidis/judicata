@@ -6,16 +6,20 @@ hook input (JSON on stdin: session_id, transcript_path, stop_hook_active, cwd),
 finds the project like the SessionStart hook (session.find_root) and checks
 every contract the session touched:
 
-  (a) the latest round of the contract the session worked on (its id follows
-      --round in a command of the transcript) did not end in a final result
-      (stop.ENDS: done, also with accepted risks, finished despite unmet
-      required criteria, not converged, round limit), and no later round of
-      the contract did; a round not closed and a focused round count as not
-      final;
-  (b) files in the scope of the contract's last final round changed during
-      the session (modified at or after the session start), their content
-      hash differs from what that round saw (rounds.seen_content) and no round
-      of the contract started after it closed.
+  (a) the latest round of the contract the session worked on (its id after
+      --round in a command of the transcript, or in the core's answer to
+      round start) did not end in a final result (stop.ENDS: done, also with
+      accepted risks, finished despite unmet required criteria, not
+      converged, round limit), and no later round of the contract with the
+      same scope or the whole contract did; a round not closed and a focused
+      round count as not final;
+  (b) per scope, the latest final round that no later round covers: files of
+      its scope were written in the session after it last looked at them
+      (file times at or after the session start and its last check; a
+      removed file shows in the time of its folder), and the content hash of
+      its files differs from what it saw (rounds.seen_content). The line
+      names the files written in the session (the hash covers the scope as a
+      whole, so it cannot tell which file differs).
 
 The session start is the first timestamp in the transcript, else the marker
 the SessionStart hook left (started.py). Without a transcript (claude -p
@@ -53,11 +57,20 @@ from . import (
 )
 from .project import Project
 
-ROUND_REF = re.compile(rb"--round\W{1,8}([0-9a-f]{32})(?![0-9a-f])")
+# A round the session worked on: its id after --round in a command, or first in
+# the core's answer to round start or close ({"ok": true, "round": ...}), with
+# the quotes and line breaks escaped once or more in the transcript.
+ROUND_REFS = (
+    re.compile(rb"--round\W{1,8}([0-9a-f]{32})(?![0-9a-f])"),
+    re.compile(
+        rb'\\*"ok\\*"\s*:\s*true\s*,(?:\s|\\+[nrt])*\\*"round\\*"\s*:\s*'
+        rb'\\*"([0-9a-f]{32})(?![0-9a-f])'
+    ),
+)
 TIMESTAMP = re.compile(rb'"timestamp"\s*:\s*"([0-9][^"\\]{9,40})"')
 HEAD = 64 * 1024  # the session start is in the first lines of the transcript
 CHUNK = 4 * 1024 * 1024
-OVERLAP = 64  # a reference split between two chunks is still found
+OVERLAP = 256  # a reference split between two chunks is still found
 SLACK = 2.0  # seconds: coarse file system clocks (file times only)
 SHOWN = 3  # blockers or files named per contract
 LINE_MAX = 600
@@ -150,7 +163,7 @@ def check(project: Project, hook_input: dict) -> list[Problem]:
                     report = {c["contract"]: c for c in shown}
                 text += _blockers(report.get(name))
             elif current is not None and begun is not None:
-                text = _changed(project, current, own, begun)
+                text = _changed(project, events, current, own, begun)
         except Exception:  # noqa: BLE001 (one contract never hides the others)
             text = None
         if text is not None:
@@ -173,19 +186,34 @@ def _review(mine: list, own: list) -> str | None:
     latest = max(mine, key=lambda r: r.started_seq)
     if latest.outcome in stop.ENDS:
         return None
-    if any(r.started_seq > latest.started_seq and r.outcome in stop.ENDS for r in own):
+    if any(
+        r.started_seq > latest.started_seq
+        and r.outcome in stop.ENDS
+        and _covers(r, latest)
+        for r in own
+    ):
         return None  # finished later, also by another session
     if latest.closed is None:
         return "a review of this session was started and not closed"
-    risks = latest.closed.get("accepted_risks")
-    label = stop.label(latest.outcome, risks if isinstance(risks, int) else 0)
     text = (
-        f'the last review of this session ended in "{_text(label, 60)}" with '
+        f'the last review of this session ended in "{_label(latest)}" with '
         f"{stop.blockers(latest)} open blocker(s)"
     )
     if stop.focused(latest):
         text += ", and a focused review never makes the contract done"
     return text
+
+
+def _covers(later, earlier) -> bool:
+    """Whether a later round looked at everything an earlier one did: the
+    same scope (stop.key) or the whole contract."""
+    return later.only is None or stop.key(later) == stop.key(earlier)
+
+
+def _label(found) -> str:
+    risks = found.closed.get("accepted_risks")
+    label = stop.label(found.outcome, risks if isinstance(risks, int) else 0)
+    return _text(label, 60)
 
 
 def _blockers(entry: dict | None) -> str:
@@ -205,30 +233,73 @@ def _blockers(entry: dict | None) -> str:
     return f" ({', '.join(names[:SHOWN])}" + (f" and {more} more)" if more > 0 else ")")
 
 
-def _changed(project: Project, current, own: list, begun: float) -> str | None:
-    """(b): files of the last final round changed in this session, unreviewed."""
-    finals = [r for r in own if r.outcome in stop.ENDS]
-    if not finals:
+def _changed(
+    project: Project, events: list[dict], current, own: list, begun: float
+) -> str | None:
+    """(b): files in scope written (or removed) in this session after the last
+    final round that saw them, whose content differs from what it saw, with no
+    review of them since. One reference per scope: the latest final round of
+    each scope that no later round covers."""
+    root = project.root
+    latest: dict[tuple, object] = {}
+    for found in sorted(own, key=lambda r: r.closed_seq):
+        if found.outcome in stop.ENDS:
+            latest[stop.key(found)] = found
+    written: list[str] = []
+    label = None
+    for found in sorted(latest.values(), key=lambda r: -r.closed_seq):
+        if any(r.started_seq > found.closed_seq and _covers(r, found) for r in own):
+            continue  # a review ran since
+        since = max(begun, _seen_at(events, found)) - SLACK
+        files = assignment.scope(project, current, found.only).files
+        mine = [f for f in files if _modified(root / f) >= since]
+        moved = any(_modified(root / d) >= since for d in _dirs(current, files))
+        if not mine and not moved:
+            continue
+        if revision.content_hash(project, files) == rounds.seen_content(found):
+            continue
+        label = label or _label(found)
+        written += [f for f in mine if f not in written]
+    if label is None:
         return None
-    last = max(finals, key=lambda r: r.closed_seq)
-    if any(r.started_seq > last.closed_seq for r in own):
-        return None  # a review ran since
-    files = assignment.scope(project, current, last.only).files
-    touched = [f for f in files if _modified(project.root / f) >= begun - SLACK]
-    if not touched:
-        return None
-    if revision.content_hash(project, files) == rounds.seen_content(last):
-        return None
-    shown = ", ".join(_text(f, 120) for f in touched[:SHOWN])
-    more = len(touched) - SHOWN
+    text = (
+        f'files in scope differ from the last finished review ("{label}") and no '
+        "review ran since; "
+    )
+    if not written:
+        return text + "a file in scope was removed or renamed in this session"
+    shown = ", ".join(_text(f, 120) for f in written[:SHOWN])
+    more = len(written) - SHOWN
     if more > 0:
         shown += f" and {more} more file(s)"
-    risks = last.closed.get("accepted_risks")
-    label = stop.label(last.outcome, risks if isinstance(risks, int) else 0)
-    return (
-        f"{shown} changed in this session after the last finished review "
-        f'("{_text(label, 60)}") and no review ran since'
-    )
+    return text + f"written in this session: {shown}"
+
+
+def _seen_at(events: list[dict], found) -> float:
+    """When a round last looked at its files: its last check, else its start."""
+    stamps = [events[found.started_seq].get("ts")] + [
+        e.get("ts")
+        for e in events
+        if e["type"] == rounds.CRITERION_RESULT
+        and e["data"].get("round") == found.id
+        and e["data"].get("revision")
+    ]
+    return max(_epoch(x) for x in stamps)
+
+
+def _dirs(current, files: list[str]) -> set[str]:
+    """Folders whose time changes when a file of the scope goes away: the
+    parents of its files and the fixed start of each path pattern."""
+    found = {str(Path(f).parent) for f in files}
+    for pattern in current.paths:
+        fixed = []
+        for part in pattern.strip("/").split("/"):
+            if not part or part == "." or any(c in part for c in "*?["):
+                break
+            fixed.append(part)
+        path = Path(*fixed) if fixed else Path(".")
+        found |= {str(path), str(path.parent)}
+    return found
 
 
 def _modified(path: Path) -> float:
@@ -239,7 +310,7 @@ def _modified(path: Path) -> float:
 
 
 def _transcript(path: Path) -> tuple[list[str], float | None]:
-    """(round ids after --round in order of first mention, session start)."""
+    """(ids of the rounds the session worked on, session start or None)."""
     refs: dict[str, None] = {}
     begun = None
     with path.open("rb") as handle:
@@ -250,8 +321,9 @@ def _transcript(path: Path) -> tuple[list[str], float | None]:
                 begun = _started(chunk[:HEAD])
                 first = False
             data = tail + chunk
-            for match in ROUND_REF.finditer(data):
-                refs.setdefault(match.group(1).decode("ascii"), None)
+            for pattern in ROUND_REFS:
+                for match in pattern.finditer(data):
+                    refs.setdefault(match.group(1).decode("ascii"), None)
             tail = data[-OVERLAP:]
     return list(refs), begun
 

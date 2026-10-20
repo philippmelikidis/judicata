@@ -6,8 +6,9 @@ stop_hook_active, cwd) and prints {"systemMessage": "<one line>"} when
 
   (a) the latest review of the session for a contract (a round the session
       named with --round) did not end in a final result, or
-  (b) files in a contract's scope changed during the session, their content
-      differs from what the last finished review saw and no review ran since.
+  (b) files in a contract's scope were written (or removed) during the session
+      after the last finished review saw them, their content differs from what
+      it saw and no review of them ran since.
 
 The agent is never stopped. Sessions that touched no contract, projects
 without .judicata/ and every internal error give no output and exit 0.
@@ -52,7 +53,16 @@ def setup(project, **kwargs) -> Path:
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("print('v1')\n", encoding="utf-8")
     project.write_contract(name, contract(**kwargs))
+    age(project)
     return source
+
+
+def age(project) -> None:
+    """Date the files and folders written so far a minute back, so that they
+    lie clearly before the session (the gate allows 2 s for coarse clocks)."""
+    then = time.time() - 60
+    for path in [project.root, *project.root.rglob("*")]:
+        os.utime(path, (then, then), follow_symlinks=False)
 
 
 def failing(project, name="code", on=True) -> None:
@@ -202,6 +212,34 @@ def test_a_later_final_review_of_another_session_releases_the_gate(project):
     assert gate(project, session(project, ours)) is None
 
 
+def test_a_round_the_session_only_started_counts(project):
+    setup(project)
+    round_id = project.ok("round", "start")["round"]
+    hook_input = session(project)
+    answer = json.dumps({"ok": True, "round": round_id, "contract": "code"}, indent=2)
+    with open(hook_input["transcript_path"], "a", encoding="utf-8") as handle:
+        result = {"type": "tool_result", "content": answer}
+        line = {"type": "user", "message": {"content": [result]}}
+        handle.write(json.dumps(line) + "\n")
+
+    message = gate(project, hook_input)
+
+    assert message is not None and "not closed" in message
+
+
+def test_a_later_final_review_of_another_scope_does_not_release(project):
+    source = setup(project)
+    (source.parent / "other.py").write_text("y = 1\n", encoding="utf-8")
+    failing(project)
+    ours = review(project, "--for", "src/code/app.py")
+    failing(project, on=False)
+    review(project, "--for", "src/code/other.py")  # done, but elsewhere
+
+    message = gate(project, session(project, ours))
+
+    assert message is not None and "continue" in message
+
+
 def test_a_focused_review_is_no_final_result(project):
     setup(project)
     round_id = review(project, "--criteria", "CODE-1", "--categories", "")
@@ -286,7 +324,7 @@ def test_a_changed_file_after_done_warns_when_no_review_ran_since(project):
     assert message is not None
     assert "code" in message
     assert "src/code/app.py" in message
-    assert "changed" in message
+    assert "written in this session" in message
     assert "/judicata:review" in message
 
 
@@ -360,6 +398,77 @@ def test_without_a_finished_review_changed_files_give_no_warning(project):
     edit(source)
 
     assert gate(project, hook_input) is None
+
+
+def test_a_removed_file_after_done_warns(project):
+    source = setup(project)
+    (source.parent / "extra.py").write_text("x = 1\n", encoding="utf-8")
+    age(project)
+    review(project)
+    hook_input = session(project, start=time.time() - 1)
+    (source.parent / "extra.py").unlink()
+
+    message = gate(project, hook_input)
+
+    assert message is not None
+    assert "removed or renamed" in message
+
+
+def test_removing_the_only_file_of_the_scope_warns(project):
+    source = setup(project)
+    review(project)
+    hook_input = session(project, start=time.time() - 1)
+    source.unlink()
+    source.parent.rmdir()
+
+    assert gate(project, hook_input) is not None
+
+
+def test_a_later_narrowed_done_does_not_hide_changes_elsewhere(project):
+    source = setup(project)
+    other = source.parent / "other.py"
+    other.write_text("y = 1\n", encoding="utf-8")
+    age(project)
+    review(project)
+    review(project, "--for", "src/code/app.py")  # done for app.py only
+    hook_input = session(project, start=time.time() - 1)
+    edit(other)
+
+    message = gate(project, hook_input)
+
+    assert message is not None
+    assert "src/code/other.py" in message
+
+
+def test_a_file_reviewed_again_later_in_the_session_is_not_named(project):
+    source = setup(project)
+    review(project)
+    hook_input = session(project, start=time.time() - 5)
+    edit(source)
+    time.sleep(3)  # longer than the slack for coarse file times
+    review(project)  # this session reviewed the change
+
+    assert gate(project, hook_input) is None
+
+
+def test_the_line_names_only_files_written_in_the_session(project):
+    source = setup(project)
+    other = source.parent / "other.py"
+    other.write_text("y = 1\n", encoding="utf-8")
+    age(project)
+    review(project)
+    start = time.time()
+    source.write_text("print('changed before the session')\n", encoding="utf-8")
+    os.utime(source, (start - 100, start - 100))
+    hook_input = session(project, start=start)
+    edit(other, "y = 1\n")  # written back unchanged
+
+    message = gate(project, hook_input)
+
+    # the scope differs (app.py, before the session), this session wrote other.py
+    assert message is not None
+    assert "written in this session: src/code/other.py" in message
+    assert "app.py" not in message
 
 
 # both at once, several contracts
