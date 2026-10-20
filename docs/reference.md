@@ -1,8 +1,8 @@
 # judicata reference
 
 The [README](../README.md) gets you started. This page has the details: the contract format,
-the three checks, findings and decisions, the stop rule, Codex, other agents, security and
-development.
+the three checks, findings and decisions, the stop rule, the stop gate, Codex, other agents,
+security and development.
 
 ## How a review works
 
@@ -83,9 +83,10 @@ stop gate only warns when an agent ends its turn while the work is not reviewed 
 blocks it. `[verifier]` sets the `model` (default `"inherit"`) and `max_runs` (default 5, at
 least 1) of the verifier that tries to refute blockers. `check = "references"` checks that
 links, anchors, images and citation keys exist, with `code_paths = true` (default false) also
-paths written in backticks. The stop gate, the verifier and the references check are still in
-development: until they ship, these fields are validated, stored and shown but have no effect,
-and a references criterion stays pending with that reason.
+paths written in backticks. The verifier and the references check are still in development:
+until they ship, their fields are validated, stored and shown but have no effect, and a
+references criterion stays pending with that reason. The [stop gate](#stop-gate) already
+warns; `gate = "block"` only warns too until block mode ships.
 
 The reviewers also report findings outside the contract. Each one is tied to an address that
 survives moved lines: the class and function around the line in Python, the heading path and
@@ -139,6 +140,30 @@ never refuses a review because of it. `/judicata:status` shows every contract at
 result, the open blockers and should-fix items, the accepted risks and rejected findings with
 their reasons, the round within the current pass and the open blockers per round.
 
+## Stop gate
+
+At the end of every agent turn the plugin's Stop hook asks the core whether the
+work under a contract is reviewed and done. It warns you in one line, and leaves the agent
+alone, when
+
+- the latest review this session ran for a contract did not reach a final result (done, done
+  with accepted risks, finished despite unmet required criteria, not converged, round limit):
+  it ended in "continue", "required criteria not met" or a focused round, or it was not
+  closed. The line names the open blockers. A later final review of the contract, also from
+  another session, releases it.
+- files in a contract's scope were written or removed during this session after its last
+  finished review looked at them, their content differs from what it saw, and no review of
+  them ran since. The line names the files this session wrote. Files written back unchanged
+  do not count, and changes made before the session started alone do not either.
+
+Sessions that touched no contract, projects without `.judicata/` and any error give no output.
+The hook finds the session's reviews in the session transcript (the round ids in its
+judicata commands and answers) and the session start in its first timestamp. Without a transcript
+(`claude -p --no-session-persistence`) it uses the start the SessionStart hook recorded in your
+state directory (next to the approvals) and counts every review started since then, so
+parallel sessions in the same project see each other's reviews there. Plain skill installs
+have no hooks and no gate yet.
+
 ## Codex
 
 judicata runs in the Codex CLI too (tested with 0.163), from the same repository:
@@ -148,12 +173,13 @@ codex plugin marketplace add philippmelikidis/judicata
 codex plugin add judicata@judicata
 ```
 
-Then trust its hook once: start `codex`, open `/hooks` and trust the SessionStart hook of
-judicata. Codex runs the hooks of a plugin only after you trusted them and skips them
+Then trust its hooks once: start `codex`, open `/hooks` and trust the SessionStart and Stop
+hooks of judicata. Codex runs the hooks of a plugin only after you trusted them and skips them
 silently otherwise. Without that step a new session does not get the summary of the ledger,
-so it does not know your decisions until a judicata skill runs; ask "where do we stand?"
-(the status skill) and it tells you when the summary is missing. `codex exec
---dangerously-bypass-hook-trust` runs the hooks for that one call without trusting them.
+so it does not know your decisions until a judicata skill runs, and the stop gate does not
+warn; ask "where do we stand?" (the status skill) and it tells you when the summary is
+missing. `codex exec --dangerously-bypass-hook-trust` runs the hooks for that one call without
+trusting them.
 
 Ask in plain words as in Claude Code ("review this again", "is it done?") or name a skill
 (`judicata:review`, `judicata:contract`, `judicata:status`). What differs in Codex:
@@ -224,6 +250,8 @@ your agent's own commands and other skills). What a plain install does not have:
 - **No schema hook.** A reviewer answer that does not match the output schema reaches the
   core, which rejects it, and the review skill asks the reviewer once more (in Claude Code a
   hook sends it back before that).
+- **No stop gate.** Without hooks nothing warns at the end of a turn while a contract has open
+  blockers or unreviewed changes; ask for the status before you trust a done.
 - **No question buttons.** Without a question tool, questions come as a numbered list in the
   chat, as in Codex.
 - **Approvals** of a contract's commands are stored in `~/.local/state/judicata` (or

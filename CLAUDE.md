@@ -329,6 +329,28 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `default` (spike #6), so the hook never acts there and Codex relies on the core check. A marker in the task would
   have to be read from Codex's rollout file (`agent_transcript_path`, an internal format, not tested), so there is
   none.
+  Hook and summary share `_safe_context`. The hook also calls `started.record` (session start marker, see below).
+- `gate.py` (stop gate, #12 warn mode): `judicata.py hook stop` (`cli.main` routes `hook stop` here, everything
+  else to `session.main`), registered in `hooks/hooks.json` on `Stop` (Claude Code and Codex). Reads the hook input
+  (`session.read_input`, `session.start_dir`, `session.find_root`), the transcript (`transcript_path`: round ids
+  after `--round` or first in the core's `{"ok": true, "round": ...}` answer = the session's rounds, first
+  `"timestamp"` = session start; host-agnostic regexes over the raw bytes, Claude Code and Codex rollouts) and the
+  ledger. Per contract: (a) the session's latest round (by `started_seq`) is not closed or its `Round.outcome` is
+  not in `stop.ENDS` (focused rounds included), and no later final round covers it (`_covers`: same `stop.key` or
+  the whole contract); names open blockers from `status.show`; (b) per scope key the latest final round that no
+  later round covers: files of its scope (`assignment.scope(project, contract, round.only)`) with mtime at or after
+  the session start and its last check (`_seen_at`, 2 s slack), or a changed folder time (`_dirs`: parents of the
+  files and the fixed start of each path pattern, for removed files), and `revision.content_hash` of those files
+  differs from `rounds.seen_content(round)`; the hash covers the scope as a whole, so the line names the files
+  written in the session, not the differing ones. Output
+  `{"systemMessage": "judicata: ..."}` in one line (at most 600 characters, repo text through `untrusted.clean`),
+  never a decision; nothing without `.judicata/`, without a touched contract or on any error, exit always 0.
+  Without a transcript (`claude -p --no-session-persistence`) the start comes from `started.recalled` and the
+  session's rounds are those whose `round_started` ts is at or after it. Every `Problem` carries the gate mode of
+  its contract; `answer()` is the one place for block mode (#15), until then it always warns.
+- `started.py`: session start markers `<state>/sessions/<sha256 of [root, session_id]>.json` {started}
+  (`approvals.state_dir`, outside the project), written by the SessionStart hook only if absent (resume, clear
+  and compact keep it, `O_EXCL`), markers older than 30 days pruned on write, every error ignored.
 
 **Ledger** (`ledger.py`): `.judicata/ledger.jsonl`, append only, one line per event
 `{"id": uuid4-hex, "ts": UTC ISO 8601 with Z, "type": snake_case, "data": {...}}`. Reading drops duplicate IDs
@@ -439,6 +461,9 @@ No tests against internal functions. One file per behavior (`test_command_criter
 core and prefixed copies equal the source, drift is reported and rebuilt, a visible plugin skill or a lock file
 exits 2, the core runs from a copy of `.agents/skills/` alone via `project.script`, every path a copy names exists
 there, no plugin name left in the copies, frontmatter), `test_review_focus.py`, `test_revision.py` also without `git`
+core equals the source, drift is reported and rebuilt, the core runs from a copy of `skills/` alone via
+`project.script`, frontmatter), `test_review_focus.py`, `test_stop_gate.py` (via `project.hook("stop", ...)` with a written transcript, Claude Code
+and Codex form, and without one after a SessionStart), `test_revision.py` also without `git`
 in PATH, `test_stop_rule.py`, `test_status.py`, `test_required_unmet.py`), `test_prompt_injection.py` (detection
 with attack and harmless examples, marking in hook, plan, list, contract, status), `test_text_cleaning.py`
 (defusing). `core/ok/fail` take `stdin=` (dict as JSON, str, bytes); `proposal()` fills a template proposal like
