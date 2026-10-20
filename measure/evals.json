@@ -17,5 +17,13 @@
     "bugs": [{"id": "todo", "file": "src/shop/cart.py", "line": 6, "keywords": ["TODO"]}],
     "decided": []
   },
-  "05-module-scope": {"done": true, "bugs": [], "decided": []}
+  "05-module-scope": {"done": true, "bugs": [], "decided": []},
+  "06-round-report": {
+    "done": false,
+    "bugs": [
+      {"id": "todo", "file": "src/billing/export.py", "line": 11, "keywords": ["TODO"]},
+      {"id": "fixme", "file": "src/billing/export.py", "line": 20, "keywords": ["FIXME"]}
+    ],
+    "decided": []
+  }
 }

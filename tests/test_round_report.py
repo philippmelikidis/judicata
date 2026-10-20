@@ -436,3 +436,26 @@ def test_a_discarded_reviewer_still_counts_as_planned(project):
 
     ratio = next(f for f in shown["findings"] if f["source"] == "reviewer")
     assert ratio["reviewers"] == {"saw": 1, "of": 2, "answered": 1}
+
+
+def test_a_broken_reference_names_the_link_and_why(project):
+    project.write_contract(
+        "docs",
+        'name = "docs"\ntemplate = "docs"\npaths = ["**"]\n\n[[criteria]]\n'
+        'id = "DOC-1"\ntext = "Links resolve"\ncheck = "references"\n'
+        "required = true\n",
+    )
+    (project.root / "guide.md").write_text(
+        "# Guide\n\nSee [setup](setup.md).\n", encoding="utf-8"
+    )
+    round_id = project.ok("round", "start")["round"]
+    project.ok("round", "check", "--round", round_id)
+
+    shown = report(project, round_id)
+
+    [criterion] = shown["criteria"]
+    assert criterion["status"] == "failed"
+    assert criterion["reason"] == "1 broken reference(s)"
+    [entry] = shown["findings"]
+    assert "setup.md does not exist" in entry["summary"]
+    assert entry["evidence"] == "guide.md:3: setup.md"
