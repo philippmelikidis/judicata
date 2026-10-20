@@ -29,6 +29,7 @@ passes with a note, there is nothing to check. The check runs in a child
 process with a time limit, like the pattern check.
 """
 
+import html
 import multiprocessing
 import os
 import re
@@ -122,13 +123,15 @@ def _suffix(path: str) -> str:
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _LIST_ITEM = re.compile(r"^ {0,3}(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)")
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
-_ESCAPE = re.compile(r"\\[!-/:-@\[-`{-~]")
+_ESCAPE = re.compile(r"\\[!\[\]`@<]")  # escaped: no link, code, citation or tag
+_UNESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")
 _CODE_SPAN = re.compile(
     r"(?<!`)(`+)(?!`)((?:(?!\n[ \t]*\n).)+?)(?<!`)\1(?!`)", re.DOTALL
 )
 _LINK = re.compile(
     r"(!?)\[((?:[^\[\]]|\[[^\[\]]*\])*)\]"  # [text], one level of nested brackets
-    r"\(\s*(<[^<>\n]*>|(?:[^\s()]|\([^\s()]*\))*)"  # (destination
+    r"\(\s*(<[^<>\n]*>|(?:\\.|[^\s()\\]|\((?:\\.|[^\s()\\]|\([^\s()]*\))*\))*)"
+    # (destination: escapes and parentheses nested two levels deep
     r"(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^()]*\)))?\s*\)"  # "title")
 )
 _DEFINITION = re.compile(
@@ -156,6 +159,7 @@ _TEX_VERBATIM = re.compile(
 _CODE_PATH = re.compile(r"^\S*/\S*[^/.]\.[A-Za-z0-9]+$")
 _BIB_ENTRY = re.compile(r"@\s*([A-Za-z]+)\s*([{(])")
 _ATX = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$")
+_QUOTE = re.compile(r"^ {0,3}(?:> ?)+")
 _SETEXT = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
 _HEADING_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _HEADING_LINK = re.compile(r"\[([^\]]*)\](?:\([^)]*\)|\[[^\]]*\])")
@@ -205,7 +209,7 @@ def slug(heading: str) -> str:
     dropped, spaces become '-'."""
     text = _HEADING_IMAGE.sub("", heading)
     text = _HEADING_LINK.sub(r"\1", text)
-    text = _HEADING_TAG.sub("", text)
+    text = html.unescape(_HEADING_TAG.sub("", text))
     text = _EMPHASIS_UNDERSCORE.sub("", text)
     kept = (
         char
@@ -233,6 +237,7 @@ def anchors(text: str) -> set[str]:
 
     paragraph = False
     for number, line in enumerate(lines):
+        line = lines[number] = _QUOTE.sub("", line)  # headings in block quotes count
         heading = _ATX.match(line)
         if heading:
             add(heading.group(1) or "")
@@ -426,7 +431,7 @@ class _Checker:
         if not destination or _SCHEME.match(destination):
             return
         self.references += 1
-        location, has_anchor, anchor = destination.partition("#")
+        location, has_anchor, anchor = _UNESCAPE.sub(r"\1", destination).partition("#")
         location = unquote(location.split("?", 1)[0])
         if not location:
             location = PurePosixPath(path).name

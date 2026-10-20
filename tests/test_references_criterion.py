@@ -315,3 +315,24 @@ def test_targets_outside_the_project_or_spelled_differently_are_broken(project):
     ]
     reasons = [b["reason"] for b in result["blockers"][0]["evidence"]["broken"]]
     assert reasons == ["points outside the project", "docs/Setup.md does not exist"]
+
+
+def test_links_with_parentheses_and_headings_with_entities_or_quotes(project):
+    project.write_contract("docs", references_contract())
+    write(project, "docs/notes (v1).md", "# A &amp; B\n\n> ## Quoted\n")
+    write(
+        project,
+        "docs/guide.md",
+        "[ok](<notes (v1).md#a--b>) [ok](notes%20\\(v1\\).md#quoted)\n"
+        "[gone](gone(v1(test)).md) [gone](gone\\(copy\\).md)\n"
+        "\\[not a link\\](nowhere.md)\n",
+    )
+
+    result = project.review()
+
+    assert broken(result) == [
+        ("docs/guide.md", 2, "gone(v1(test)).md", "link"),
+        ("docs/guide.md", 2, "gone\\(copy\\).md", "link"),
+    ]
+    targets = [b["target"] for b in result["blockers"][0]["evidence"]["broken"]]
+    assert targets == ["docs/gone(v1(test)).md", "docs/gone(copy).md"]
