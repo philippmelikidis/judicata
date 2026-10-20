@@ -48,11 +48,13 @@ Differences to Claude Code: [reference](docs/reference.md#codex).
 npx skills@latest add philippmelikidis/judicata --skill '*' -a <agent>  # opencode, cursor, ...; omit -a to choose
 ```
 
-[skills.sh](https://skills.sh) copies the three skills `review`, `contract` and `status`
-into your project (`-g` for all projects). Install all three: the review skill ships the
-core, the other two use it. To update, run `npx skills@latest update`. In Claude Code and
-Codex take the plugin instead, never both, or you get every skill twice. What a plain
-install lacks: see the table below and [Other agents](docs/reference.md#other-agents-plain-skills).
+[skills.sh](https://skills.sh) copies the three skills `judicata-review`,
+`judicata-contract` and `judicata-status` into your project (`-g` for all projects). The
+prefix keeps them apart from your agent's own commands and other skills. Install all three:
+`judicata-review` ships the core, the other two use it. To update, run
+`npx skills@latest update`. In Claude Code and Codex take the plugin instead, never both, or
+you get every skill twice under two names. What a plain install lacks: see the table below
+and [Other agents](docs/reference.md#other-agents-plain-skills).
 
 </details>
 
@@ -66,8 +68,9 @@ What each install gets:
 | Stop gate, warn: a one-line warning when a turn ends with open blockers or unreviewed changes ([details](docs/reference.md#stop-gate)) | yes | yes, once you trusted the hook | no hooks: the skills tell the agent to check the status before it says done and to name what is open |
 | Stop gate, block: the agent may not end its turn then (`gate = "block"` or `JUDICATA_GATE=block`) | yes | yes, once you trusted the hook | no hooks: the same rule in the skills, an instruction only |
 | Independent reviewers in a fresh context | sub-agents with read-only tools | sub-agents, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents one reviewer, the session itself, and the report says so |
+| Reviewer with an invalid answer sent back once with the exact schema error (hook) | yes | no: the core rejects it and the skill asks the reviewer once more | no: the same core check |
 | Questions | answer buttons | numbered list | the agent's question tool, or a numbered list |
-| Skills | `/judicata:review`, `/judicata:contract`, `/judicata:status` | `judicata:review`, ... | `review`, `contract`, `status` |
+| Skills | `/judicata:review`, `/judicata:contract`, `/judicata:status` | `judicata:review`, ... | `judicata-review`, `judicata-contract`, `judicata-status` |
 
 ## Your first review
 
@@ -169,7 +172,8 @@ flowchart LR
   reviewer (your choice, or a contract without judgment criteria), its findings count directly. Want something else? Say "only
   one reviewer" or "use Opus and Sonnet".
 - **Blockers need evidence.** Outside the contract, only a correctness, security or factual
-  finding with a concrete scenario can block. Everything else is at most a note.
+  finding with a concrete scenario can block. Everything else is at most a note. Every quote a
+  reviewer cites must read exactly at the cited file and line, so no reviewer can invent one.
 - **The core is a plain Python command line.** Skills and hooks only call it, so the same rules
   apply in every host and every session.
 
@@ -289,9 +293,10 @@ uv run --with pytest==9.1.1 pytest
 claude plugin eval . --scaffold --allow-tools Bash --trust-plugin --runs 1 --no-publish
 ```
 
-The tests drive the core command line. `skills/review/core/` is a generated copy of the
-core for plain skill installs: rebuild it with `python3 tools/bundle_core.py`, CI fails while
-it differs from the source. Every change to shipped files (manifest, skills, agents, hooks,
+The tests drive the core command line. `skills/review/core/` (the core) and
+`.agents/skills/judicata-*/` (the skills under their prefixed names) are generated copies for
+plain skill installs: rebuild them with `python3 tools/bundle_core.py`, CI fails while they
+differ from the source. Every change to shipped files (manifest, skills, agents, hooks,
 scripts, templates) needs an entry under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) or a
 higher version in `.claude-plugin/plugin.json`; `python3 tools/check_version.py` checks this in
 CI. To release: raise the version, move the Unreleased entries under it, tag `v<version>`.

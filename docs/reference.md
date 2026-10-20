@@ -72,7 +72,10 @@ reviewers with a fresh context and read-only tools, by default on the model of y
 they agree, the result stands. If they disagree, you decide once, and your decision holds in
 later rounds as long as the criterion and the files it was about are unchanged. Set the number
 and models in the contract (`[reviewers]`) or just say so for one review ("only one reviewer",
-"use Opus and Sonnet"); that does not change the contract.
+"use Opus and Sonnet"); that does not change the contract. Every place a reviewer cites is
+checked: the quote must read exactly at the cited file and line (only whitespace and line
+breaks may differ). An answer with an invented or misplaced quote goes back to the reviewer
+once with the reason, a second invalid answer drops that reviewer for the round.
 
 Contract format 0.2 adds three optional fields; contracts written by judicata 0.1 keep working
 unchanged and get the defaults. `[stop] gate` is `"warn"` (default) or `"block"`: whether the
@@ -226,6 +229,12 @@ Ask in plain words as in Claude Code ("review this again", "is it done?") or nam
   files with shell commands in your session's sandbox and are told to change nothing, and
   they see the project's `AGENTS.md`. If sub-agents are switched off, the review runs with
   one reviewer, the session itself, and the report says that it was not independent.
+- **Schema check of reviewer answers.** In Claude Code a SubagentStop hook sends a reviewer
+  whose answer is not valid JSON for the output schema back once, with the exact problems.
+  Codex runs SubagentStop hooks too, but every sub-agent there has the same type
+  (`default`), so judicata cannot tell its reviewers from your other sub-agents and leaves
+  all of them alone. A malformed answer then reaches the core, which rejects it, and the
+  review skill asks the reviewer once more, as without the hook.
 - **Untrusted repositories:** start Codex with `codex --sandbox read-only`. The reviewers
   run in your session's sandbox, so they are then read-only by the sandbox too, not only by
   instruction. judicata's own commands that write `.judicata/` (the ledger) or store an
@@ -249,17 +258,26 @@ npx skills@latest add philippmelikidis/judicata --skill '*' -a <agent>
 
 `-a` names the agent (for example `opencode` or `cursor`; leave it out to choose), `-g`
 installs for all your projects instead of the current one. The installer copies
-`skills/review`, `skills/contract` and `skills/status` from this repository (OpenCode, for
-example, reads them from `.agents/skills/`). The review skill carries a copy of the core in
-`core/` (the command line, the templates and the reviewer instructions), and the other two
-skills use it, so install all three. Update with `npx skills@latest update`. In Claude Code
-and Codex use the plugin instead: the plugin gets everything below, and a second install
-would give you every skill twice.
+`judicata-review`, `judicata-contract` and `judicata-status` from `.agents/skills/` in this
+repository (OpenCode, for example, reads them from `.agents/skills/` in your project). They
+are generated from the plugin's skills and differ only in their names and in how they refer
+to each other; the plugin's own skills are marked internal and the installer skips them.
+`judicata-review` carries a copy of the core in `core/` (the command line, the templates and
+the reviewer instructions), and the other two skills use it, so install all three. Update
+with `npx skills@latest update`. In Claude Code and Codex use the plugin instead: the plugin
+gets everything below, and a second install would give you every skill twice under two
+names.
 
-Ask in plain words as in Claude Code, or call the skills the way your agent does (their
-names are plain `review`, `contract` and `status`, without the `judicata:` prefix; another
-skill or command with the same name in your agent can shadow them). What a plain install
-does not have:
+If your installer does not know the internal mark and offers six skills, pick the three
+prefixed ones:
+
+```bash
+npx skills@latest add philippmelikidis/judicata --skill judicata-review --skill judicata-contract --skill judicata-status
+```
+
+Ask in plain words as in Claude Code, or call the skills the way your agent does
+(`judicata-review`, `judicata-contract`, `judicata-status`; the prefix keeps them apart from
+your agent's own commands and other skills). What a plain install does not have:
 
 - **No session hook.** Plain skills cannot ship hooks, so a new session does not start with
   the summary of the ledger, and a chat that is not running a judicata skill does not know
@@ -272,6 +290,9 @@ does not have:
   instruction only, as in Codex. Model names of Claude (opus, sonnet) become your session's
   model, and the report says so. If your agent has no sub-agents, the review runs with one
   reviewer, the session itself, and the report says that it was not independent.
+- **No schema hook.** A reviewer answer that does not match the output schema reaches the
+  core, which rejects it, and the review skill asks the reviewer once more (in Claude Code a
+  hook sends it back before that).
 - **No stop gate.** Without hooks nothing warns or blocks at the end of a turn while a
   contract has open blockers or unreviewed changes. The skills carry the rule instead: check
   the status before saying done and name what is open. Ask for the status yourself before you
@@ -330,9 +351,15 @@ uv run --with pytest==9.1.1 pytest
 
 The tests drive the core command line. `skills/review/core/` is a copy of `scripts/`,
 `templates/`, `agents/reviewer.md` and `LICENSE` for installs as plain skills (an install
-copies only the skill folders). Never edit it by hand: after changing the source run
-`python3 tools/bundle_core.py`; the tests and CI fail while the copy differs
-(`python3 tools/bundle_core.py --check` lists the differences). The behavior of the plugin in Claude Code (skills,
+copies only the skill folders), and `.agents/skills/judicata-*/` holds the skills of
+`skills/` under their prefixed names, each with the same files (the review copy with the
+core). Never edit the copies by hand: after changing the source run
+`python3 tools/bundle_core.py`; the tests and CI fail while a copy differs
+(`python3 tools/bundle_core.py --check` lists the differences). Every plugin skill keeps
+`metadata:` / `internal: true` in its frontmatter (hides it from `npx skills`), and the
+repository root has no `skills-lock.json` (the installer would take the copies as installed);
+the tool checks both. When Codex runs inside this repository it also lists the copies as
+repository skills; users do not see them. The behavior of the plugin in Claude Code (skills,
 reviewer agent, hook) is checked by five acceptance evals in `evals/`, run with
 `claude plugin eval` against the plugin and, as a baseline, against Claude without it:
 
