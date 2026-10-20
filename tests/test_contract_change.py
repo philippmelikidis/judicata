@@ -56,8 +56,8 @@ def test_a_proposed_change_shows_the_difference_and_writes_nothing(project):
         "to": {"count": 1, "models": ["inherit"]},
     }
     assert diff["stop"] == {
-        "from": {"max_rounds": 5, "stall_rounds": 2},
-        "to": {"max_rounds": 3, "stall_rounds": 2},
+        "from": {"max_rounds": 5, "stall_rounds": 2, "gate": "warn"},
+        "to": {"max_rounds": 3, "stall_rounds": 2, "gate": "warn"},
     }
     assert diff["template"] is None
     criteria = diff["criteria"]
@@ -101,7 +101,7 @@ def test_a_confirmed_change_is_stored_as_the_next_version(project):
         "CODE-3",
         "CODE-5",
     ]
-    assert on_disk["stop"] == {"max_rounds": 3, "stall_rounds": 2}
+    assert on_disk["stop"] == {"max_rounds": 3, "stall_rounds": 2, "gate": "warn"}
     shown = project.ok("contract", "show")
     assert (shown["status"], shown["version"]) == ("recorded", 2)
     versions = [
@@ -183,7 +183,11 @@ def test_a_contract_edited_by_hand_is_taken_over_as_the_next_version(project):
     )
 
     assert preview["file_status"] == "changed"
-    assert preview["diff"]["stop"]["to"] == {"max_rounds": 7, "stall_rounds": 2}
+    assert preview["diff"]["stop"]["to"] == {
+        "max_rounds": 7,
+        "stall_rounds": 2,
+        "gate": "warn",
+    }
     assert preview["diff"]["criteria"]["changed"] == []
     assert stored["version"] == 2
     shown = project.ok("contract", "show")

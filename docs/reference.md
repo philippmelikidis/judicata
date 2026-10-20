@@ -9,8 +9,9 @@ development.
 Run `/judicata:review`. Without a contract, judicata first runs a short interview: it suggests
 a template that fits the artifact (code, docs or prose), proposes criteria from the template
 and from the artifact (for example the test command it finds in your project), and you drop,
-add or mark criteria required or optional. Reviewers (2, the model of your chat) and the stop
-rule (at most 5 rounds, "not converged" after 2 rounds without progress) are one Enter each.
+add or mark criteria required or optional. Reviewers (2, the model of your chat), the stop
+rule (at most 5 rounds, "not converged" after 2 rounds without progress), the stop gate (warn)
+and the verifier (the model of your chat, at most 5 runs per round) are one Enter each.
 The contract is stored in `.judicata/contracts/<name>.toml`, for example:
 
 ```toml
@@ -25,6 +26,11 @@ models = ["inherit"]
 [stop]
 max_rounds = 5
 stall_rounds = 2
+gate = "warn"
+
+[verifier]
+model = "inherit"
+max_runs = 5
 
 [[criteria]]
 id = "CODE-1"
@@ -70,6 +76,16 @@ and models in the contract (`[reviewers]`) or just say so for one review ("only 
 checked: the quote must read exactly at the cited file and line (only whitespace and line
 breaks may differ). An answer with an invented or misplaced quote goes back to the reviewer
 once with the reason, a second invalid answer drops that reviewer for the round.
+
+Contract format 0.2 adds three optional fields; contracts written by judicata 0.1 keep working
+unchanged and get the defaults. `[stop] gate` is `"warn"` (default) or `"block"`: whether the
+stop gate only warns when an agent ends its turn while the work is not reviewed and done, or
+blocks it. `[verifier]` sets the `model` (default `"inherit"`) and `max_runs` (default 5, at
+least 1) of the verifier that tries to refute blockers. `check = "references"` checks that
+links, anchors, images and citation keys exist, with `code_paths = true` (default false) also
+paths written in backticks. The stop gate, the verifier and the references check are still in
+development: until they ship, these fields are validated, stored and shown but have no effect,
+and a references criterion stays pending with that reason.
 
 The reviewers also report findings outside the contract. Each one is tied to an address that
 survives moved lines: the class and function around the line in Python, the heading path and
