@@ -133,9 +133,6 @@ Render `contract` readably:
 5. Verifier: `model` (`inherit` means the model of the user's chat) and at most `max_runs`
    runs per round that try to refute blockers before they hold up done.
 
-In this version of judicata the verifier and the `references` check are not active yet: their
-settings are stored and shown, but nothing verifies, and a `references` criterion stays
-pending. Say so in one line below the stop rule and verifier.
 
 If `status` is `changed`, say that the file was edited outside judicata and differs from the
 recorded version `latest_version`, and that reviews refuse it (`contract_edited`) until the

@@ -64,7 +64,7 @@ verified in the latest round that recorded it.
 
 from dataclasses import dataclass, field
 
-from . import assignment, scope, untrusted, verification
+from . import assignment, findings, scope, untrusted, verification
 
 ROUND_STARTED = "round_started"
 FINDING_RECORDED = "finding_recorded"
@@ -419,7 +419,7 @@ def looked(current_round, info: dict) -> bool:
             return True
         places = result.get("places")
         return (
-            result.get("check") == "pattern"
+            result.get("check") in findings.PLACED
             and bool(places)
             and all(p["address"].get("kind") != "scope" for p in places)
         )

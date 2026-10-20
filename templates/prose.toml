@@ -34,3 +34,9 @@ id = "PROSE-4"
 text = "The author's voice is kept: wording, tone and point of view stay the author's own"
 check = "judgment"
 required = true
+
+[[criteria]]
+id = "PROSE-5"
+text = "Every relative link, image and citation key points to something that exists"
+check = "references"
+required = true
