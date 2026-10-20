@@ -160,15 +160,15 @@ What happens then depends on the gate mode:
   the agent may not end its turn. The hook answers with `decision: "block"` and a reason that
   names the open blockers or the changed files and tells the agent what to do: review again,
   or tell you plainly that the work is not done and end its answer with the line
-  `judicata: not done`. You see the same in one line. An answer whose last message has that
+  `judicata: not done`. You see the same in one line. An answer whose last line is that
   line is an honest report: the turn ends, you get the one-line warning, and it does not
   count as a block. The gate lets go as soon as the latest review reached a final result,
-  and after at most three blocks per session: the next stop only warns and appends a
+  and after at most three blocks per session (counted per project): the next stop only warns and appends a
   `gate_released` event (session id, number of blocks, contracts) to the ledger, so the gate
   can never trap an agent in a loop. The gate reads only that line, not what the answer
-  says otherwise. The count lives in your state directory next to the approvals; where it cannot be kept (no session id, a state directory that cannot be
-  written), the gate blocks at most once per turn (it lets go when the hook input says
-  `stop_hook_active`).
+  says otherwise. The count lives in your state directory next to the approvals;
+  where it cannot be kept (no session id, a state directory that cannot be written), the
+  gate only warns and says why, so the limit always holds.
 
 `JUDICATA_GATE=block` or `JUDICATA_GATE=warn` in the environment of the agent overrides the
 mode of every contract for that run without changing a contract: block your night runs

@@ -41,9 +41,10 @@ message (last_assistant_message) with that line is an honest report: it only
 warns and does not count. Problems of warn contracts are named in
 the message only. A session gets at most MAX_BLOCKS blocks, counted in the
 state directory (started.path, folder "gate"); the next stop lets go, warns
-and appends one gate_released event to the ledger. Where the count cannot be
-kept (no session id, a state directory that cannot be written) the gate
-blocks only when stop_hook_active is not true, so at most once per turn.
+and appends one gate_released event to the ledger (again at a later stop if
+the ledger did not take it). Where the count cannot be kept (no session id, a
+state directory that cannot be written or read) the gate only warns, so the
+limit always holds; stop_hook_active needs no rule of its own then.
 answer() is the one place that turns problems into the hook output.
 """
 
@@ -93,8 +94,7 @@ ENV = "JUDICATA_GATE"
 MAX_BLOCKS = 3  # per session; then the gate lets go and records it
 GATE_RELEASED = "gate_released"
 NOT_DONE = "judicata: not done"  # the line of an honest report, see honest()
-HONEST = re.compile(r"(?im)^[\s*_>#-]*judicata:\s*not\s+done\b")
-HONEST_TAIL = 64 * 1024
+HONEST = re.compile(r"(?i)[\s*_>#-]*judicata:\s*not\s+done\b")
 REVIEW_AGAIN = "Review again with /judicata:review before trusting a done."
 
 
@@ -139,14 +139,17 @@ def answer(project: Project, problems: list[Problem], hook_input: dict) -> dict 
     marker = _marker(project, session_id)
     tally = _tally(marker)
     if tally is not None and tally["blocks"] >= MAX_BLOCKS:
-        if not tally["released"] and _save(marker, {**tally, "released": True}):
-            _record_release(project, session_id, tally["blocks"], blocking)
-        return {"systemMessage": released(problems, tally["blocks"])}
-    count = None
-    if tally is not None and _save(marker, {**tally, "blocks": tally["blocks"] + 1}):
-        count = tally["blocks"] + 1
-    elif hook_input.get("stop_hook_active") is True:
-        return {"systemMessage": warning(problems)}  # cannot count: once per turn
+        recorded = tally["released"]
+        if not recorded and _record_release(
+            project, session_id, tally["blocks"], blocking
+        ):
+            _save(marker, {**tally, "released": True})  # if not: recorded again
+            recorded = True
+        return {"systemMessage": released(problems, tally["blocks"], recorded)}
+    if tally is None or not _save(marker, {**tally, "blocks": tally["blocks"] + 1}):
+        # no count, no block: the limit per session must hold
+        return {"systemMessage": uncounted(problems)}
+    count = tally["blocks"] + 1
     return {
         "decision": "block",
         "reason": reason(blocking, count),
@@ -156,10 +159,13 @@ def answer(project: Project, problems: list[Problem], hook_input: dict) -> dict 
 
 def honest(hook_input: dict) -> bool:
     """Whether the agent's last message says honestly that the work is not
-    done: a line that starts with NOT_DONE (last_assistant_message, Claude
-    Code and Codex)."""
+    done: its last line that is not empty starts with NOT_DONE (markdown
+    and case ignored; last_assistant_message, Claude Code and Codex)."""
     last = hook_input.get("last_assistant_message")
-    return isinstance(last, str) and HONEST.search(last[-HONEST_TAIL:]) is not None
+    if not isinstance(last, str):
+        return False
+    lines = [line for line in last[-4096:].splitlines() if line.strip()]
+    return bool(lines) and HONEST.match(lines[-1]) is not None
 
 
 def mode() -> str | None:
@@ -206,11 +212,22 @@ def stopped(problems: list[Problem], count: int | None) -> str:
     )
 
 
-def released(problems: list[Problem], blocks: int) -> str:
+def released(problems: list[Problem], blocks: int, recorded: bool) -> str:
+    note = " (recorded in the ledger)" if recorded else ""
     return _line(
-        f"judicata: the stop gate let go after {blocks} blocks in this session "
-        "(recorded in the ledger); work under a contract is still not reviewed "
-        "and done.",
+        f"judicata: the stop gate let go after {blocks} blocks in this session"
+        f"{note}; work under a contract is still not reviewed and done.",
+        problems,
+        REVIEW_AGAIN,
+        LINE_MAX,
+    )
+
+
+def uncounted(problems: list[Problem]) -> str:
+    return _line(
+        "judicata: work under a contract is not reviewed and done; the stop gate "
+        "cannot count its blocks in this session (no session id or no writable "
+        "state directory), so it only warns.",
         problems,
         REVIEW_AGAIN,
         LINE_MAX,
@@ -269,7 +286,9 @@ def _save(marker: Path, tally: dict) -> bool:
 
 def _record_release(
     project: Project, session_id, blocks: int, problems: list[Problem]
-) -> None:
+) -> bool:
+    """Append gate_released; False if the ledger did not take it (the gate
+    lets go all the same and tries again at the next stop)."""
     contracts = sorted({p.contract for p in problems})
     data = {
         "session": session_id,
@@ -277,8 +296,11 @@ def _record_release(
         "contracts": contracts,
         "reason": "block_limit",
     }
-    with contextlib.suppress(Exception):  # the gate lets go all the same
+    try:
         ledger.append(project, GATE_RELEASED, data)
+    except Exception:  # noqa: BLE001 (a read-only ledger, a broken file)
+        return False
+    return True
 
 
 def check(project: Project, hook_input: dict) -> list[Problem]:

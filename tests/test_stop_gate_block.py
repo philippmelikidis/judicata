@@ -173,6 +173,7 @@ def test_an_honest_not_done_ends_the_turn_without_a_block(project, last):
         "All done.",
         "The work is not done yet, but I think it is fine.",
         "I could say judicata: not done, but it is done.",
+        "Example:\n> judicata: not done\n\nEverything is done and ready.",
         None,
         7,
     ],
@@ -240,24 +241,47 @@ def test_blocks_in_warn_mode_do_not_count(project):
     assert "1 of 3" in stop(project, hook_input)["reason"]
 
 
-def test_without_a_place_to_count_it_blocks_only_once_per_turn(project):
+def test_without_a_place_to_count_it_only_warns(project):
     hook_input = open_review(project, gate="block")
     not_a_dir = project.root.parent / "state-file"
     not_a_dir.write_text("x\n", encoding="utf-8")
     project.env["JUDICATA_STATE_DIR"] = str(not_a_dir)
 
-    assert blocked(stop(project, hook_input))
-    again = stop(project, {**hook_input, "stop_hook_active": True})
+    payload = stop(project, hook_input)
 
-    assert not blocked(again) and "systemMessage" in again
+    assert set(payload) == {"systemMessage"}
+    assert "cannot count" in payload["systemMessage"]
 
 
-def test_without_a_session_id_it_blocks_only_once_per_turn(project):
+def test_without_a_session_id_it_only_warns(project):
     hook_input = open_review(project, gate="block")
     del hook_input["session_id"]
 
-    assert blocked(stop(project, hook_input))
-    assert not blocked(stop(project, {**hook_input, "stop_hook_active": True}))
+    payload = stop(project, hook_input)
+
+    assert set(payload) == {"systemMessage"}
+    assert "cannot count" in payload["systemMessage"]
+
+
+def test_a_release_the_ledger_could_not_take_is_recorded_at_the_next_stop(project):
+    hook_input = open_review(project, gate="block")
+    for _ in range(3):
+        assert blocked(stop(project, hook_input))
+    project.ledger.chmod(0o444)
+    try:
+        payload = stop(project, hook_input)
+    finally:
+        project.ledger.chmod(0o644)
+    assert set(payload) == {"systemMessage"}
+    assert "recorded in the ledger" not in payload["systemMessage"]
+    assert released(project) == []
+
+    payload = stop(project, hook_input)
+
+    assert "recorded in the ledger" in payload["systemMessage"]
+    assert len(released(project)) == 1
+    stop(project, hook_input)
+    assert len(released(project)) == 1
 
 
 # the environment

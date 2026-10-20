@@ -335,12 +335,13 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `JUDICATA_GATE` (`warn`/`block`, case and spaces ignored, other values ignored, overrides every contract) gives
   `{"decision": "block", "reason", "systemMessage"}`; the reason names only the block contracts' problems and says
   what to do (review again, or tell the user honestly it is not done and end with the line `judicata: not done`),
-  the message all problems. `last_assistant_message` (Claude Code and Codex) with a line starting with that marker
+  the message all problems. `last_assistant_message` (Claude Code and Codex) whose last non-empty line starts with that marker
   (`HONEST`, markdown and case ignored) = honest report: warn only, not counted. At most
   `MAX_BLOCKS` (3) per session, counted in `<state>/gate/<same key as started.py>.json` {blocks, released}; the
-  next stop warns and appends `gate_released` {session, blocks, contracts, reason `block_limit`} once (only after
-  the released flag was saved). No usable count (no session id, state not writable or unreadable): block only when
-  `stop_hook_active` is not true. A failed ledger write never keeps the block.
+  next stop warns and appends `gate_released` {session, blocks, contracts, reason `block_limit`} once (the released
+  flag is saved after the ledger took it; a failed write is retried at the next stop and never keeps the block). No
+  usable count (no session id, state not writable or unreadable): warn only (`uncounted`), so the limit always
+  holds and `stop_hook_active` needs no rule.
 - `started.py`: session start markers `<state>/sessions/<sha256 of [root, session_id]>.json` {started}
   (`started.path(root, session_id, folder)`, also used for the gate's block count)
   (`approvals.state_dir`, outside the project), written by the SessionStart hook only if absent (resume, clear
