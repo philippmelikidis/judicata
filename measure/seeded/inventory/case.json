@@ -1,0 +1,76 @@
+{
+  "contract": {
+    "name": "code",
+    "template": "code",
+    "paths": [
+      "src/**"
+    ],
+    "reviewers": {
+      "count": 1,
+      "models": [
+        "inherit"
+      ]
+    },
+    "stop": {
+      "max_rounds": 5,
+      "stall_rounds": 2
+    },
+    "criteria": [
+      {
+        "id": "CODE-1",
+        "text": "No TODO or FIXME markers left in the code",
+        "check": "pattern",
+        "required": true,
+        "forbid": "\\b(TODO|FIXME)\\b"
+      }
+    ]
+  },
+  "pick": 2,
+  "mutations": [
+    {
+      "id": "available-negative",
+      "kind": "bug",
+      "file": "src/inventory/stock.py",
+      "find": "return max(stock - reserved, 0)",
+      "replace": "return stock - reserved",
+      "summary": "available() can go below zero"
+    },
+    {
+      "id": "reorder-off-by-one",
+      "kind": "bug",
+      "file": "src/inventory/stock.py",
+      "find": "return level <= threshold",
+      "replace": "return level < threshold",
+      "summary": "needs_reorder() misses the threshold itself"
+    },
+    {
+      "id": "restock-overwrites",
+      "kind": "bug",
+      "file": "src/inventory/stock.py",
+      "find": "levels[item] = levels.get(item, 0) + amount",
+      "replace": "levels[item] = amount",
+      "summary": "restock() overwrites the level instead of adding"
+    },
+    {
+      "id": "newest-order",
+      "kind": "bug",
+      "file": "src/inventory/stock.py",
+      "find": "return history[-count:]",
+      "replace": "return history[-count:][::-1]",
+      "summary": "newest() returns the entries newest first"
+    },
+    {
+      "id": "unit-price-zero",
+      "kind": "decoy",
+      "file": "src/inventory/stock.py",
+      "find": "        return 0\n",
+      "keywords": [
+        "unit_price",
+        "zero units",
+        "units == 0"
+      ],
+      "reason": "0 is intended: the price list shows items without units as free samples.",
+      "reopen_if": "a caller needs to tell free samples from a division by zero"
+    }
+  ]
+}

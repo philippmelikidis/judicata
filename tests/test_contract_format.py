@@ -236,21 +236,21 @@ def docs_project(project):
     project.write_contract("docs", references_contract())
 
 
-def test_a_references_criterion_stays_pending_with_its_reason(project):
+def test_a_references_criterion_runs_in_the_round_check(project):
     docs_project(project)
     round_id = project.ok("round", "start")["round"]
 
     checked = project.ok("round", "check", "--round", round_id)
     closed = project.ok("round", "close", "--round", round_id)
 
-    assert checked["results"] == []
-    [pending] = checked["pending"]
-    assert pending["criterion"] == "DOCS-1"
-    assert pending["check"] == "references"
-    assert "references check" in pending["reason"]
-    assert "not available" in pending["reason"]
-    assert closed["outcome"] != "done"
-    assert [p["reason"] for p in closed["pending"]] == [pending["reason"]]
+    assert checked["pending"] == []
+    [result] = checked["results"]
+    assert (result["criterion"], result["check"], result["passed"]) == (
+        "DOCS-1",
+        "references",
+        True,
+    )
+    assert closed["outcome"] == "done"
 
 
 def test_reviewers_do_not_judge_a_references_criterion(project):

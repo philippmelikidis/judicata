@@ -626,6 +626,10 @@ plain skills there are no hooks, so this rule is the only gate.
      `evidence.missing` for `require`, the files in `evidence.unreadable`, and
      `evidence.problem` if there is one (for example a timeout or no files in scope). If
      `hit_count` is larger than the number of hits shown, say how many there are in total.
+   - Evidence of references: each entry of `evidence.broken` as `file:line` with its
+     `reference` and `reason`, the files in `evidence.unreadable`, and `evidence.problem` if
+     there is one. If `broken_count` is larger than the number shown, say how many there are
+     in total.
    - Evidence of a judgment: the reasons and places (`file:line` with `quote`) in
      `evidence.verdicts`, and `evidence.decision` if the user decided.
    - Findings outside the contract: the `blocking_findings` together with the blockers, then

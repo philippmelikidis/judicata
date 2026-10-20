@@ -50,8 +50,8 @@ forbid = '^\s*print\('
 
 From then on the contract is frozen. judicata runs the criteria, records the round in the
 ledger and reports "done" or the blockers with their evidence (for a command: the last lines of
-its output, for a pattern: the hits with file and line, for a judgment: the reviewers' reasons
-with file, line and quote). `/judicata:contract` shows the current contract and changes it
+its output, for a pattern: the hits with file and line, for references: the broken links and
+keys with file and line, for a judgment: the reviewers' reasons with file, line and quote). `/judicata:contract` shows the current contract and changes it
 when you ask: it shows the difference to the current version and stores a new version only
 after you confirm. Decisions on unchanged criteria stay valid, those on changed or removed
 criteria lapse. No agent changes the contract on its own, and a contract file edited by hand
@@ -83,10 +83,37 @@ stop gate only warns when an agent ends its turn while the work is not reviewed 
 blocks it. `[verifier]` sets the `model` (default `"inherit"`) and `max_runs` (default 5, at
 least 1) of the verifier that tries to refute blockers. `check = "references"` checks that
 links, anchors, images and citation keys exist, with `code_paths = true` (default false) also
-paths written in backticks. The references check is still in development: until it ships, its
-fields are validated, stored and shown but have no effect, and a references criterion stays
-pending with that reason. The [stop gate](#stop-gate) warns and blocks, and the verifier
-challenges blockers (see below).
+paths written in backticks (see below). The [stop gate](#stop-gate) warns and blocks, and the
+verifier challenges blockers.
+
+A references criterion (`check = "references"`) needs no model and gives the same result every
+time, in the plugin and in a plain skills install. It reads the Markdown files in scope (`.md`,
+`.markdown`, `.qmd`, `.rmd` and similar) and the LaTeX files (`.tex`):
+
+- Relative links (`[text](path)`, reference definitions `[label]: path`, `<a href="path">`)
+  must point to a file or directory that exists, relative to the linking file; a path starting
+  with `/` is relative to the project root, as on GitHub. Spelling counts exactly, also on file
+  systems that ignore case.
+- An anchor (`path.md#install`, or `#install` in the same file) must be a heading of the
+  target Markdown file, as GitHub turns it into an anchor (lower case, punctuation dropped,
+  spaces as `-`, a repeated heading gets `-1`, `-2`), or an `id` or `name` in its HTML.
+  Anchors into other files (line anchors of source files) are not checked.
+- Images (`![alt](path)`, `<img src="path">`) must exist.
+- Citation keys (`[@key]`, also `[see @a, p. 3; -@b]`, and `\cite{key}` with its variants
+  such as `\citep` or `\parencite`) must be entries of a `.bib` file anywhere in the project.
+  In LaTeX files only citations are checked; comments and verbatim environments are skipped.
+- External URLs (any scheme, such as `https:` or `mailto:`, or starting with `//`) are never
+  checked, so the check needs no network.
+- Code blocks, inline code and HTML comments are not read as links. With `code_paths = true`,
+  an inline code span that is a single path with a slash and a file extension
+  (`` `scripts/build.sh` ``) must exist relative to the project root. There are no further
+  exceptions; if this misfires on your docs, turn `code_paths` off.
+
+Each broken reference is listed with its file, line, the reference as written, the resolved
+target and the reason, and becomes a finding at its heading and paragraph. Files that cannot be
+read as UTF-8 fail the criterion, as does an empty scope; a scope without Markdown or LaTeX
+files passes with a note that there was nothing to check. The docs template proposes this
+check with `code_paths = true`, the prose template without.
 
 The reviewers also report findings outside the contract. Each one is tied to an address that
 survives moved lines: the class and function around the line in Python, the heading path and
@@ -418,3 +445,7 @@ claude plugin eval . --scaffold --allow-tools Bash --trust-plugin --runs 1 --no-
 (sandboxed: on Linux this needs `bwrap` and `socat` on `PATH`), `--case '<name glob>'` runs
 one case, `--ablation none` skips the baseline. Results land in `evals/results/` (ignored by
 Git).
+
+`measure/measure.py` compares judicata with plain Claude Code over the eval cases and small repositories with
+seeded bugs (re-raise rate over two sessions, rounds to convergence, blocker precision and recall), with a cost
+cap per run. Method, command and results: [measurement.md](measurement.md).

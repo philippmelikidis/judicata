@@ -59,8 +59,18 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   check kinds also have `run(project, criterion, scope) -> {"passed", "evidence"}`. Without `run` a criterion stays
   `pending` (`PENDING_REASON`). Status: `command` runs (shell in the project folder, its own process group,
   `timeout` default 300 s, last 20 lines of stdout+stderr as `evidence.output_tail`); `judgment` is only validated;
-  `references` (`code_paths`, default false) is only validated so far and stays pending with its reason (#11 adds
-  `run`), reviewers never judge it.
+  `references` runs (#11, `code_paths` default false), reviewers never judge it: Markdown files in scope (`MARKDOWN`
+  suffixes) give links, reference definitions, `<a href>`, images, `<img src>`, `[@key]` and `\cite{}`; LaTeX files
+  only `\cite{}` (comments, verbatim skipped). Code blocks (fenced, indented outside lists), inline code, HTML
+  comments and backslash escapes are blanked out first (offsets kept). Targets relative to the linking file (`/` =
+  root), exact spelling per path segment (`os.listdir`), `..` outside the root is broken; anchors only into Markdown
+  targets, against GitHub slugs (`slug()`, repeats `-1`) plus HTML `id`/`name`, also lowercased; keys from every
+  `.bib` in `scope.candidates` (`bib_keys`, @comment/@string/@preamble skipped). `code_paths`: a span without
+  whitespace with a `/` and an extension, relative to the root. External = any scheme or `//`. Same child process as
+  `pattern` (fixed `TIMEOUT` 60 s, no contract field). Evidence `broken` [{file, line, column, kind
+  link|image|citation|code_path, reference, target, reason}] sorted per file, `broken_count`, `unreadable` (fails),
+  `files_checked`, `references_checked`; empty scope fails, no Markdown/LaTeX file passes with `note`. Failed
+  patterns and references get `places` (`findings.PLACED`, `pattern_places`: broken references at their line).
   `pattern` runs: one rule per criterion (`forbid`/`require` as a Python regex with MULTILINE, `max_words`,
   `max_lines`), every rule applies per file, evaluated in a child process (spawn) with `timeout` (default 60 s,
   against backtracking). Evidence `evidence.hits` [{file, line, column, text}], for `require` also `missing`, for
@@ -561,6 +571,18 @@ everything through the core, never by hand. Graders as deterministic as possible
 case one LLM grader on the last answer and `tool_used: Skill` (with ablation it only counts as an indicator).
 The eval has no AskUserQuestion: the prompts therefore say "no follow-up questions, leave decisions open", and the
 contracts have no command criteria (no approval needed) and one reviewer.
+
+**Measurement** (`measure/`, #9): `measure/measure.py` compares judicata with plain Claude Code for the README
+numbers, maintainers only, not shipped, not in CI. Corpus: the eval cases (judicata arm via `evals/_lib/scaffold.py`,
+plain arm only the artifact; truth in `measure/evals.json`) and seeded cases `measure/seeded/<case>/` (`project/`
+plus `case.json` with bug and decoy mutations, applied in a throwaway folder). Both arms run `claude -p`
+(`--setting-sources project,local --strict-mcp-config`, `dontAsk`, Bash in Claude Code's sandbox, every shell
+command only with `--allow-bash`, Edit/Write denied), the
+judicata arm with `--plugin-dir`; seeded trials play rounds (fresh session, decisions via `--resume`, seeded bugs
+fixed, next fresh session). Metrics only from the `findings` block every review prompt asks for. Cost cap:
+`--max-budget-usd` per call from `--max-run-usd` and the rest of `--max-cost-usd` (exit 2 when reached). Raw
+results to `--raw-dir` outside the repo, summary into `docs/measurement.md` below its marker. Smoke test
+`tests/test_measure.py` with a fake `claude` (`--claude`). Method and limits: `docs/measurement.md`.
 
 ## Agent skills
 
