@@ -68,7 +68,11 @@ def test_reviewers_and_stop_rule_default_and_are_written_into_the_contract(proje
     project.ok("contract", "create", stdin=draft)
 
     assert stored(project)["reviewers"] == {"count": 2, "models": ["inherit"]}
-    assert stored(project)["stop"] == {"max_rounds": 5, "stall_rounds": 2}
+    assert stored(project)["stop"] == {
+        "max_rounds": 5,
+        "stall_rounds": 2,
+        "gate": "warn",
+    }
 
 
 def test_chosen_reviewers_and_stop_rule_are_kept(project):
@@ -81,7 +85,11 @@ def test_chosen_reviewers_and_stop_rule_are_kept(project):
     project.ok("contract", "create", stdin=draft)
 
     assert stored(project)["reviewers"] == {"count": 2, "models": ["opus", "sonnet"]}
-    assert stored(project)["stop"] == {"max_rounds": 3, "stall_rounds": 1}
+    assert stored(project)["stop"] == {
+        "max_rounds": 3,
+        "stall_rounds": 1,
+        "gate": "warn",
+    }
 
 
 def test_an_invalid_proposal_is_rejected_and_nothing_is_written(project):
@@ -138,7 +146,11 @@ def test_validate_checks_a_proposal_without_writing(project):
 
     checked = project.ok("contract", "validate", stdin=draft)
 
-    assert checked["contract"]["stop"] == {"max_rounds": 5, "stall_rounds": 2}
+    assert checked["contract"]["stop"] == {
+        "max_rounds": 5,
+        "stall_rounds": 2,
+        "gate": "warn",
+    }
     assert checked["exists"] is False
     assert not (project.root / ".judicata").exists()
     draft["template"] = "poetry"

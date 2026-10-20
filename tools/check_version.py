@@ -5,10 +5,10 @@ Claude Code updates a plugin with a version in plugin.json only when that versio
 goes up. So every change to a shipped file since the latest release tag (v*, the
 newest one reachable from HEAD) needs either a higher version in
 .claude-plugin/plugin.json (the next release) or a new entry under "## [Unreleased]"
-in CHANGELOG.md (released later). Shipped files are the manifests, skills, agents,
-hooks, scripts and templates; a file moved out of them counts as well. Uncommitted
-changes count. An Unreleased entry counts only if it was not already there at the tag.
-The version may never go below the latest tag.
+in CHANGELOG.md (released later). Shipped files are the manifests, skills (also the
+prefixed copies in .agents/skills/), agents, hooks, scripts and templates; a file moved
+out of them counts as well. Uncommitted changes count. An Unreleased entry counts only
+if it was not already there at the tag. The version may never go below the latest tag.
 
   python3 tools/check_version.py    exit 0 when fine, else exit 1 with the reason
 
@@ -21,7 +21,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-SHIPPED = (".claude-plugin/", "skills/", "agents/", "hooks/", "scripts/", "templates/")
+SHIPPED = (
+    ".claude-plugin/",
+    ".agents/skills/",  # the prefixed copies for plain skill installs
+    "skills/",
+    "agents/",
+    "hooks/",
+    "scripts/",
+    "templates/",
+)
 VERSION = re.compile(r"v?(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?")
 
 

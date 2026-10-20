@@ -1,0 +1,4 @@
+{
+  "verdict": "verified",
+  "reason": "average([]) divides by zero; nothing in scope guards the empty list before the division."
+}

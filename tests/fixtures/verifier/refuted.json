@@ -1,0 +1,7 @@
+{
+  "verdict": "refuted",
+  "reason": "The only caller returns 0 for an empty list before average() runs.",
+  "counter_evidence": [
+    {"kind": "quote", "file": "src/callers.py", "line": 5, "quote": "if not values:"}
+  ]
+}

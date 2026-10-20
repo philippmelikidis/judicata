@@ -1,0 +1,4 @@
+{
+  "verdict": "inconclusive",
+  "reason": "Whether a caller can pass an empty list depends on input outside the scope."
+}

@@ -1,5 +1,5 @@
 {
-  "description": "judicata: give every new session a short summary of the review ledger",
+  "description": "judicata: give every new session a short summary of the review ledger, warn (or block) at the end of a turn when work under a contract is not reviewed and done, and send judicata's reviewer back once when its answer does not match the schema",
   "hooks": {
     "SessionStart": [
       {
@@ -7,6 +7,28 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py\" hook session-start",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py\" hook subagent-stop",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py\" hook stop",
             "timeout": 30
           }
         ]

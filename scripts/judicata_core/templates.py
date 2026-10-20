@@ -58,6 +58,7 @@ def load(name: str) -> dict:
         "paths": ["**"],
         "reviewers": dict(contract.DEFAULT_REVIEWERS),
         "stop": dict(contract.DEFAULT_STOP),
+        "verifier": dict(contract.DEFAULT_VERIFIER),
         "criteria": stripped,
     }
     try:
@@ -122,6 +123,7 @@ def show(name: str) -> dict:
         "paths": [],
         "reviewers": dict(contract.DEFAULT_REVIEWERS),
         "stop": dict(contract.DEFAULT_STOP),
+        "verifier": dict(contract.DEFAULT_VERIFIER),
         "criteria": [
             {
                 "id": c["id"],

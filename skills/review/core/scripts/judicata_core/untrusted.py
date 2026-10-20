@@ -398,6 +398,7 @@ def collect(entry: str, fields: dict, skip=()) -> list[dict]:
 FINDING_TEXT = ("label", "summary", "file", "category", "criterion", "contract")
 DECISION_TEXT = ("reason", "reopen_condition")
 SIGHTING_TEXT = ("summary", "evidence", "symbol", "quote")
+EVIDENCE_TEXT = ("file", "quote", "output", "command")  # a verifier's counter-evidence
 
 
 def finding(entry: dict, info_event: str | None = None) -> list[dict]:
@@ -427,6 +428,30 @@ def finding(entry: dict, info_event: str | None = None) -> list[dict]:
                 f"run {sighting.get('run')}",
                 {f"sightings.{k}": sighting.get(k) for k in SIGHTING_TEXT},
             )
+    found += verification(entry.get("verification"))
+    return found
+
+
+def verification(value) -> list[dict]:
+    """Warnings for a verifier's verdict on a finding: its reason, its
+    counter-evidence (quotes are code) and the user's reason for reopening."""
+    if not isinstance(value, dict):
+        return []
+    name = f"event {value.get('event')}"
+    found = collect(name, {"verification.reason": value.get("reason")})
+    for item in value.get("counter_evidence") or []:
+        if isinstance(item, dict):
+            found += collect(
+                name,
+                {f"verification.{k}": item.get(k) for k in EVIDENCE_TEXT if k in item},
+                CODE_SKIP,
+            )
+    reopened = value.get("reopened")
+    if isinstance(reopened, dict):
+        found += collect(
+            f"event {reopened.get('event')}",
+            {"verification.reopened.reason": reopened.get("reason")},
+        )
     return found
 
 
@@ -465,6 +490,30 @@ def shown(entry: dict) -> dict:
             _cleaned(s, SIGHTING_TEXT, "sightings.") if isinstance(s, dict) else s
             for s in out["sightings"]
         ]
+    if isinstance(out.get("verification"), dict):
+        out["verification"] = _verification_shown(out["verification"])
+    return out
+
+
+def _verification_shown(value: dict) -> dict:
+    out = _cleaned(value, ("reason",), "verification.")
+    _ids(out)
+    if isinstance(out.get("counter_evidence"), list):
+        out["counter_evidence"] = [
+            {
+                k: clean(v, None) if k in EVIDENCE_TEXT and flagged(
+                    f"verification.{k}", v, CODE_SKIP
+                ) else v
+                for k, v in item.items()
+            }
+            if isinstance(item, dict) else item
+            for item in out["counter_evidence"]
+        ]  # fmt: skip
+    if isinstance(out.get("reopened"), dict):
+        out["reopened"] = _cleaned(
+            out["reopened"], ("reason",), "verification.reopened."
+        )
+        _ids(out["reopened"])
     return out
 
 
@@ -624,10 +673,15 @@ def unmet(contract_name: str, items) -> list[dict]:
 
 
 def contract(current) -> list[dict]:
-    """Warnings for a contract file: its paths, models and every criterion."""
+    """Warnings for a contract file: its paths, models (reviewers and verifier)
+    and every criterion."""
     found = collect(
         f"contract file {current.name}",
-        {"paths": list(current.paths), "models": current.reviewers.get("models")},
+        {
+            "paths": list(current.paths),
+            "models": current.reviewers.get("models"),
+            "verifier.model": current.verifier.get("model"),
+        },
     )
     for item in current.criteria:
         found += criterion(

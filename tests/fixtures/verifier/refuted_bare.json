@@ -1,0 +1,5 @@
+{
+  "verdict": "refuted",
+  "reason": "Callers never pass an empty list.",
+  "counter_evidence": []
+}

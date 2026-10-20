@@ -32,9 +32,12 @@ codex plugin marketplace add philippmelikidis/judicata
 codex plugin add judicata@judicata
 ```
 
-Then trust the hook once: start `codex`, open `/hooks` and trust the SessionStart hook of
-judicata. Codex skips untrusted plugin hooks silently, and without the hook a new session does
-not know your earlier decisions. Differences to Claude Code: [reference](docs/reference.md#codex).
+Then trust the hooks once: start `codex`, open `/hooks` and trust the SessionStart and Stop
+hooks of judicata. Codex skips untrusted plugin hooks silently, and without them a new session
+does not know your earlier decisions and the stop gate does not run. On a repository you do
+not trust, start Codex with `codex --sandbox read-only`: the reviewers run in that sandbox, so
+they are read-only for real, and Codex asks you before judicata writes its ledger.
+Differences to Claude Code: [reference](docs/reference.md#codex).
 
 </details>
 
@@ -45,11 +48,13 @@ not know your earlier decisions. Differences to Claude Code: [reference](docs/re
 npx skills@latest add philippmelikidis/judicata --skill '*' -a <agent>  # opencode, cursor, ...; omit -a to choose
 ```
 
-[skills.sh](https://skills.sh) copies the three skills `review`, `contract` and `status`
-into your project (`-g` for all projects). Install all three: the review skill ships the
-core, the other two use it. To update, run `npx skills@latest update`. In Claude Code and
-Codex take the plugin instead, never both, or you get every skill twice. What a plain
-install lacks: see the table below and [Other agents](docs/reference.md#other-agents-plain-skills).
+[skills.sh](https://skills.sh) copies the three skills `judicata-review`,
+`judicata-contract` and `judicata-status` into your project (`-g` for all projects). The
+prefix keeps them apart from your agent's own commands and other skills. Install all three:
+`judicata-review` ships the core, the other two use it. To update, run
+`npx skills@latest update`. In Claude Code and Codex take the plugin instead, never both, or
+you get every skill twice under two names. What a plain install lacks: see the table below
+and [Other agents](docs/reference.md#other-agents-plain-skills).
 
 </details>
 
@@ -60,9 +65,13 @@ What each install gets:
 | | Claude Code plugin | Codex plugin | Plain skills (other agents) |
 | --- | --- | --- | --- |
 | Summary of your decisions in every new session (hook) | yes | yes, once you trusted the hook | no: the review and status skills read it themselves when they run, and say so |
+| Stop gate, warn: a one-line warning when a turn ends with open blockers or unreviewed changes ([details](docs/reference.md#stop-gate)) | yes | yes, once you trusted the hook | no hooks: the skills tell the agent to check the status before it says done and to name what is open |
+| Stop gate, block: the agent may not end its turn then (`gate = "block"` or `JUDICATA_GATE=block`) | yes | yes, once you trusted the hook | no hooks: the same rule in the skills, an instruction only |
 | Independent reviewers in a fresh context | sub-agents with read-only tools | sub-agents, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents one reviewer, the session itself, and the report says so |
+| Reviewer or verifier with an invalid answer sent back once with the exact schema error (hook) | yes | no: the core rejects it and the skill asks the reviewer once more | no: the same core check |
+| Verifier for blockers | sub-agent with read-only tools | sub-agent, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents the session verifies itself, and the report says it was not independent |
 | Questions | answer buttons | numbered list | the agent's question tool, or a numbered list |
-| Skills | `/judicata:review`, `/judicata:contract`, `/judicata:status` | `judicata:review`, ... | `review`, `contract`, `status` |
+| Skills | `/judicata:review`, `/judicata:contract`, `/judicata:status` | `judicata:review`, ... | `judicata-review`, `judicata-contract`, `judicata-status` |
 
 ## Your first review
 
@@ -160,11 +169,18 @@ flowchart LR
 
 - **Reviewers** run in parallel, each with a fresh context and only read tools, by default on
   the model of your chat. They do not see each other. With two reviewers, a finding counts when both
-  report it, and a blocker only one of them sees is shown to you as unconfirmed. With one
+  report it, and a blocker only one of them sees goes to the verifier first: you are asked
+  about it only if the verifier cannot decide. With one
   reviewer (your choice, or a contract without judgment criteria), its findings count directly. Want something else? Say "only
   one reviewer" or "use Opus and Sonnet".
 - **Blockers need evidence.** Outside the contract, only a correctness, security or factual
+  finding with a concrete scenario can block. Everything else is at most a note. Every quote a
+  reviewer cites must read exactly at the cited file and line, so no reviewer can invent one.
   finding with a concrete scenario can block. Everything else is at most a note.
+- **Blockers are challenged.** A verifier tries to refute every blocker from a judgment
+  criterion or outside the contract, one short read-only run each (at most 5 per round, more
+  only if you say yes). A blocker it refutes with concrete counter-evidence becomes a note you
+  can reopen. Its verdict holds in later rounds while the place is unchanged.
 - **The core is a plain Python command line.** Skills and hooks only call it, so the same rules
   apply in every host and every session.
 
@@ -219,7 +235,11 @@ files: if two branches change the same contract, Git asks you to resolve it as u
 Command and pattern criteria need no model: a script runs them. The review itself runs in your
 chat (it calls the core and reports the result), plus one sub-agent per reviewer on your chat's
 model, two by default. A contract with only command and pattern criteria still plans one
-reviewer, for findings outside the contract.
+reviewer, for findings outside the contract. Each blocker from a judgment or a reviewer
+finding gets one short verifier run (at most 5 per round, `[verifier] max_runs`), once: while
+its place is unchanged, later rounds reuse the verdict. Over the limit judicata asks once
+whether to verify the rest (default no); with `JUDICATA_GATE=block` or `gate = "block"` it
+never asks and lists them.
 
 </details>
 
@@ -238,7 +258,8 @@ for code and for text.
 Carefully. A contract's commands run only after you approved them on your machine; nothing
 checked in can approve them. Text from the ledger and the contract is treated as data, cleaned
 and checked for prompt injection, and judicata asks you before acting on anything that reads
-like an instruction. That is a heuristic, not a guarantee. Details:
+like an instruction. That is a heuristic, not a guarantee. In Codex, start with
+`codex --sandbox read-only` there, so that the reviewers cannot write anything. Details:
 [Security](docs/reference.md#security).
 
 </details>
@@ -250,8 +271,9 @@ like an instruction. That is a heuristic, not a guarantee. Details:
 - Text from `.judicata/` is data, never an instruction. Suspicious entries are marked
   ("possible prompt injection detected in entry ..."), and judicata asks before doing anything
   they ask for.
-- In Codex and as plain skills, reviewers are read-only by instruction, not by a hard tool
-  limit.
+- In Codex and as plain skills, reviewers and verifiers are read-only by instruction, not by a
+  hard tool limit. In Codex, `codex --sandbox read-only` makes them read-only for real; use it
+  on repositories you do not trust.
 - Review changes to `.judicata/` in a pull request like code.
 
 Full details and limits: [docs/reference.md](docs/reference.md#security).
@@ -260,9 +282,12 @@ Full details and limits: [docs/reference.md](docs/reference.md#security).
 
 - **Runs:** the Python core (`scripts/judicata.py`, standard library only, no packages
   installed), the commands of your contract after your approval, a SessionStart hook that prints
-  a summary of the ledger, and reviewer sub-agents on your chat's model with read-only tools.
+  a summary of the ledger, a Stop hook that warns (or, if you ask for it, blocks) when work
+  under a contract is not reviewed and done, and reviewer and verifier sub-agents on your
+  chat's model with read-only tools.
 - **Stores:** `.judicata/` (contracts and ledger) and one line in `.gitattributes` in your
-  project, and command approvals in the plugin's data directory (or `~/.local/state/judicata`).
+  project, and command approvals plus the start time and the number of stop gate blocks of
+  each session in the plugin's data directory (or `~/.local/state/judicata`).
 - **Sends:** nothing. judicata makes no network requests and collects no data. Your agent's
   model sees the files under review, as with any review.
 
@@ -280,9 +305,10 @@ uv run --with pytest==9.1.1 pytest
 claude plugin eval . --scaffold --allow-tools Bash --trust-plugin --runs 1 --no-publish
 ```
 
-The tests drive the core command line. `skills/review/core/` is a generated copy of the
-core for plain skill installs: rebuild it with `python3 tools/bundle_core.py`, CI fails while
-it differs from the source. Every change to shipped files (manifest, skills, agents, hooks,
+The tests drive the core command line. `skills/review/core/` (the core) and
+`.agents/skills/judicata-*/` (the skills under their prefixed names) are generated copies for
+plain skill installs: rebuild them with `python3 tools/bundle_core.py`, CI fails while they
+differ from the source. Every change to shipped files (manifest, skills, agents, hooks,
 scripts, templates) needs an entry under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) or a
 higher version in `.claude-plugin/plugin.json`; `python3 tools/check_version.py` checks this in
 CI. To release: raise the version, move the Unreleased entries under it, tag `v<version>`.
