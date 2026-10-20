@@ -644,7 +644,8 @@ this order. The user must be able to decide from it alone.
    `result.outcome_label`" (`result.final` false: say "as it stands before your
    decisions"), the counts by severity from `result.severity` ("3 blockers, 1 should-fix,
    2 notes") and the open blockers per round of `result.open_blockers_per_round` joined with
-   " -> " (for example "6 -> 4 -> 3"). A focused round (`result.counted` false) says
+   " -> " (for example "6 -> 4 -> 3"; a failed criterion counts once however many places
+   it fails at, plus every blocking finding outside the contract). A focused round (`result.counted` false) says
    "focused round, it does not count for the stop rule" instead of the round numbers.
 2. **Criteria**, one line each: id, text, passed or failed (or pending, or undecided: the
    reviewers did not agree, the user decides); a failed one with its `effect` (blocks,
@@ -653,8 +654,8 @@ this order. The user must be able to decide from it alone.
 3. **Findings**, every entry of `findings` on its own, never merged or replaced by a count:
    "#`number` `severity` `criterion` or `category`, `place.label`" (with `place.file`:`line`
    where it differs), then what is wrong (`summary`), the evidence or failure scenario
-   (`evidence`), who saw it ("2 of 2 reviewers", "only 1 of 2 reviewers", or "deterministic
-   check" when `reviewers` is null), the verifier (`verification`: verified; refuted, with
+   (`evidence`), who saw it (`reviewers`: "2 of 2 reviewers", "only 1 of 2 reviewers", with
+   "N answered" when `answered` is below `of`; "deterministic check" when it is null), the verifier (`verification`: verified; refuted, with
    `verifier_reason`; inconclusive; `unverified`: over the verifier limit; `discarded`;
    `not_run`), whether it is new or came back (`history`: `new`; `still_open`, open since an
    earlier round; `came_back` because `place_changed`, `fix_not_confirmed` (the fix did not

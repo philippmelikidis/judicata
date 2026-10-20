@@ -16,7 +16,8 @@ round report --round R answers, in this order:
   findings  every finding on its own, numbered from 1, blockers first: source,
             criterion, category, severity, place {file, line, lines, label},
             summary (what is wrong), evidence (scenario, quote, hit or output),
-            reviewers {saw, of} (None for deterministic checks), consensus,
+            reviewers {saw, of: planned runs, answered: valid answers} (None for
+            deterministic checks and earlier findings), consensus,
             verification (verified, refuted, inconclusive, unverified: over the
             limit, discarded, not_run, None: not a candidate) with
             verifier_reason, history {status new|still_open|came_back|earlier,
@@ -31,7 +32,10 @@ round report --round R answers, in this order:
             next_round {counted, round_in_pass, pass, max_rounds, rounds_left,
             last_in_pass, not_converged_unless_below, new_pass}
 An open round needs every reviewer and verifier run in (reviews_incomplete,
-verification_incomplete). Every text comes cleaned (one line, cut); the
+verification_incomplete). A closed round is reported as round close left it
+(the ledger up to its round_closed): later decisions and rounds are for status.
+Earlier findings: open blockers of the contract this round did not see, within
+its scope and focus, with the evidence of their latest recording. Every text comes cleaned (one line, cut); the
 report writes nothing.
 """
 
@@ -70,10 +74,18 @@ def report(project: Project, round_id: str) -> dict:
         seen = _closed(events, all_rounds, current)
     prior = states.replay(events[: current.started_seq], all_rounds)
     here = {e["fingerprint"] for e in seen["entries"]}
+    in_round = {c["id"] for c in current.criteria}  # the focus
     earlier = [
-        {**item.public(), "earlier": True}
+        {**item.public(), **_sightings(events, item), "earlier": True}
         for item in states.of_contract(seen["found"], current.contract)
-        if item.state == "open" and item.blocking and item.fingerprint not in here
+        if item.state == "open"
+        and item.blocking
+        and item.fingerprint not in here
+        and states.in_view(current, item.info)
+        and (
+            item.info.get("source") != "criterion"
+            or item.info.get("criterion") in in_round
+        )
     ]
     listed = [e for e in seen["entries"] if e["presentation"] != "suppressed"]
     numbered = _numbered(listed + earlier)
@@ -139,11 +151,24 @@ def _open(project, events, all_rounds, current) -> dict:
         "outcome_label": stop.label(found["outcome"], len(found["risks"])),
         "stop": found["stop"],
         "open_blockers": found["open_blockers"],
+        "evidence_warnings": evidence_warnings(
+            current,
+            {
+                **assessed["results"],
+                **{  # criteria the user still decides: the reviewers' reasons
+                    e["criterion"]: {"check": "judgment", "evidence": e}
+                    for e in assessed["judged"]
+                    if e["criterion"] in assessed["needs_verdict"]
+                },
+            },
+        ),
     }
 
 
 def _closed(events, all_rounds, current) -> dict:
-    found = states.replay(events, all_rounds)
+    """The round as round close left it: later decisions, verdicts and rounds
+    are not part of its report (status shows where things stand now)."""
+    found = states.replay(events[: current.closed_seq + 1], all_rounds)
     entries = [
         rounds.with_state(e, current.contract, found, current.id)
         for e in rounds.recorded(events, current.id)
@@ -163,6 +188,7 @@ def _closed(events, all_rounds, current) -> dict:
         "outcome_label": stop.label(outcome, closed.get("accepted_risks") or 0),
         "stop": _rule(events, all_rounds, current),
         "open_blockers": stop.blockers(current),
+        "evidence_warnings": evidence_warnings(current, current.results),
     }
 
 
@@ -215,7 +241,8 @@ def _finding(current, seen: dict, prior: dict, entry: dict, number: int) -> dict
     earlier = bool(entry.get("earlier"))
     decision = entry.get("decision")
     summary, evidence, saw = _what(current, seen["results"], entry)
-    of = len(current.outputs) if current.plan is not None else 0
+    planned = len(current.plan["runs"]) if current.plan is not None else 0
+    answered = len(current.outputs)
     to_decide = bool(entry.get("needs_decision")) or (
         entry.get("state") == "open" and entry.get("severity") in ASKED
     )
@@ -238,10 +265,12 @@ def _finding(current, seen: dict, prior: dict, entry: dict, number: int) -> dict
         },
         "summary": summary,
         "evidence": evidence,
-        "reviewers": None if saw is None or earlier else {"saw": saw, "of": of},
+        "reviewers": None
+        if saw is None or earlier
+        else {"saw": saw, "of": planned, "answered": answered},
         "verification": _verification(current, seen, entry),
         "verifier_reason": clean(
-            (entry.get("verification") or {}).get("reason"), SUMMARY
+            (entry.get("verification") or {}).get("reason"), EVIDENCE
         )
         or None,
         "history": _history(prior, seen["found"], current, entry),
@@ -250,9 +279,63 @@ def _finding(current, seen: dict, prior: dict, entry: dict, number: int) -> dict
         "previous_decision": _decision(entry.get("previous_decision")),
         "needs_decision": bool(entry.get("needs_decision")),
         "to_decide": to_decide,
-        "warnings": entry.get("warnings")
-        or untrusted.finding(entry, entry.get("event")),
+        "warnings": _merged(
+            entry.get("warnings") or untrusted.finding(entry, entry.get("event")),
+            seen["evidence_warnings"].get(entry.get("criterion"), [])
+            if entry.get("source") == "criterion"
+            else [],
+        ),
     }
+
+
+def _merged(*lists: list[dict]) -> list[dict]:
+    found = []
+    for items in lists:
+        found += [w for w in items if w not in found]
+    return found
+
+
+def _sightings(events: list[dict], item) -> dict:
+    """The sightings of the latest recording of an earlier finding: its
+    evidence (public() does not carry them)."""
+    latest = {}
+    for event in events:
+        data = event["data"]
+        if (
+            event["type"] == rounds.FINDING_RECORDED
+            and data.get("contract") == item.contract
+            and data.get("fingerprint") == item.fingerprint
+        ):
+            latest = data
+    return {"sightings": latest.get("sightings") or [], "lines": latest.get("lines")}
+
+
+def evidence_warnings(current, results: dict) -> dict[str, list[dict]]:
+    """Per criterion: warnings for the texts behind its result (the reviewers'
+    reasons and quotes of a judgment, command output, pattern hits)."""
+    found = {}
+    for criterion in current.criteria:
+        data = results.get(criterion["id"])
+        if not data:
+            continue
+        proof = data.get("evidence")
+        if criterion["check"] == "judgment" and isinstance(proof, dict):
+            judged = untrusted.judged(
+                current.contract,
+                {
+                    "criterion": criterion["id"],
+                    "text": criterion["text"],
+                    "verdicts": proof.get("verdicts"),
+                    "decision": proof.get("decision"),
+                },
+            )
+            found[criterion["id"]] = judged["warnings"]
+        else:
+            _, warnings = untrusted.evidence(
+                f"criterion {criterion['id']} result", proof
+            )
+            found[criterion["id"]] = warnings
+    return found
 
 
 def _decision(decision: dict | None) -> dict | None:
@@ -439,7 +522,10 @@ def _criterion(current, seen: dict, criterion: dict, shown: list[dict]) -> dict:
         "effect": effect,
         "reason": None if reason is None else clean(reason, SUMMARY),
         "findings": [f["number"] for f in shown if f["criterion"] == clean(cid, 60)],
-        "warnings": untrusted.criterion(current.contract, criterion),
+        "warnings": _merged(
+            untrusted.criterion(current.contract, criterion),
+            seen["evidence_warnings"].get(cid, []),
+        ),
     }
 
 
