@@ -15,6 +15,7 @@ version users get: Claude Code updates the plugin only when it goes up.
 - Claude Code: a SubagentStop hook checks the answer of judicata's reviewer against the output schema and sends the reviewer back once with the exact problems; a second invalid answer goes to the core, which rejects it as before. Other sub-agents are never touched; Codex keeps the core check (all its sub-agents have the same type).
 - `review submit` rejects a reviewer answer with a number longer than Python reads as invalid output instead of failing with an internal error.
 - Verifier for confirmed blockers: a new `judicata:verifier` agent (fresh context, read tools only) gets one blocker from a judgment criterion or outside the contract with its place, the reviewers' evidence and the results of the approved commands of the round, and tries to refute it. New core commands `verify plan`, `verify submit` (`--self` when the session verifies itself), `verify discard` and `verify reopen`. Verdicts are verified (marked), refuted (only with a checked quote from the scope or a passing approved command with its output, otherwise inconclusive) or inconclusive. Refuted blockers become notes with the reason and no longer hold up done; the user can reopen them. At most `[verifier] max_runs` runs per round, most severe first; the rest are listed as unverified. Command and pattern criteria are never verified. The review skill runs the step, `round close` and `status` report it.
+- The SubagentStop schema check covers judicata's verifier too.
 
 ## [0.1.0] - 2026-10-19
 
