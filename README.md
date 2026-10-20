@@ -67,6 +67,7 @@ What each install gets:
 | Summary of your decisions in every new session (hook) | yes | yes, once you trusted the hook | no: the review and status skills read it themselves when they run, and say so |
 | Stop gate, warn: a one-line warning when a turn ends with open blockers or unreviewed changes ([details](docs/reference.md#stop-gate)) | yes | yes, once you trusted the hook | no hooks: the skills tell the agent to check the status before it says done and to name what is open |
 | Stop gate, block: the agent may not end its turn then (`gate = "block"` or `JUDICATA_GATE=block`) | yes | yes, once you trusted the hook | no hooks: the same rule in the skills, an instruction only |
+| Unattended runs close with open decisions, which wait for you ([details](docs/reference.md#unattended-runs)) | yes: the next session's summary asks them first, the stop gate names them | yes, once you trusted the hook | the round closes the same; the review and status skills read the waiting decisions when they run; no gate |
 | Independent reviewers in a fresh context | sub-agents with read-only tools | sub-agents, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents one reviewer, the session itself, and the report says so |
 | Reviewer or verifier with an invalid answer sent back once with the exact schema error (hook) | yes | no: the core rejects it and the skill asks the reviewer once more | no: the same core check |
 | Verifier for blockers | sub-agent with read-only tools | sub-agent, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents the session verifies itself, and the report says it was not independent |
@@ -238,8 +239,8 @@ model, two by default. A contract with only command and pattern criteria still p
 reviewer, for findings outside the contract. Each blocker from a judgment or a reviewer
 finding gets one short verifier run (at most 5 per round, `[verifier] max_runs`), once: while
 its place is unchanged, later rounds reuse the verdict. Over the limit judicata asks once
-whether to verify the rest (default no); with `JUDICATA_GATE=block` or `gate = "block"` it
-never asks and lists them.
+whether to verify the rest (default no); in an unattended run (`JUDICATA_GATE=block`,
+`gate = "block"` or `JUDICATA_UNATTENDED=1`) it never asks and lists them.
 
 </details>
 

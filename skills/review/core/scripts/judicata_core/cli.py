@@ -101,7 +101,8 @@ def _add_round(groups, common) -> None:
         "close", parents=[common], help="close a round and report the outcome"
     )
     close.add_argument("--round", required=True, help="round id from round start")
-    close.set_defaults(handler=lambda a, p: rounds.close(p, a.round))
+    _unattended_option(close, "close with open decisions, they wait for the user")
+    close.set_defaults(handler=lambda a, p: rounds.close(p, a.round, a.unattended))
 
     finish = commands.add_parser(
         "finish",
@@ -116,6 +117,15 @@ def _add_round(groups, common) -> None:
         help="the unmet_hash round close reported, after the user said yes",
     )
     finish.set_defaults(handler=lambda a, p: rounds.finish(p, a.round, a.confirm))
+
+
+def _unattended_option(command, what: str) -> None:
+    command.add_argument(
+        "--unattended",
+        action="store_true",
+        help=f"nobody can answer questions in this run: {what} "
+        "(also JUDICATA_UNATTENDED=1 or block mode)",
+    )
 
 
 def _scope_options(command, what: str) -> None:
@@ -245,7 +255,8 @@ def _add_verify(groups, common) -> None:
         help="fix the verifier runs of a round, one blocker each, most severe first",
     )
     plan.add_argument("--round", required=True, help="round id from round start")
-    plan.set_defaults(handler=lambda a, p: verifier.plan(p, a.round))
+    _unattended_option(plan, "never ask to verify more (ask_more false)")
+    plan.set_defaults(handler=lambda a, p: verifier.plan(p, a.round, a.unattended))
 
     more = commands.add_parser(
         "more",

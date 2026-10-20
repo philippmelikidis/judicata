@@ -89,9 +89,9 @@ and say done only if the latest round for the scope you mean ended in `done` (wi
 risks: say so) or `done_with_unmet_required` (say "finished despite unmet required
 criteria"), and no file in that scope changed after that round. `not_converged` and
 `round_limit` end a pass but are not done. Otherwise say plainly that the work is not done,
-name what is open (the blockers, `required_unmet`, rounds not closed, or the files changed
-since the last review), offer a review, and end that answer with the line
-`judicata: not done`.
+name what is open (the blockers, `required_unmet`, `waiting_for_decision`, rounds not
+closed, or the files changed since the last review), offer a review, and end that answer
+with the line `judicata: not done`.
 
 In Claude Code and Codex the plugin's stop gate checks the same at the end of every turn: it
 warns, or with `gate = "block"` in the contract (or `JUDICATA_GATE=block` in the environment)
@@ -120,6 +120,9 @@ as they are. One section per entry of `contracts`, in this order:
      the round before (the first round of a pass is only the starting value).
    - `round_limit`: the pass reached `max_rounds` rounds.
    - `continue`: the pass goes on.
+   - `waiting_for_decision`: an unattended run (block mode, `JUDICATA_UNATTENDED` or
+     `--unattended`) closed the round although decisions were open; they count as open
+     blockers, so it is not done. See part 4.
    - `required_unmet`: required criteria fail although the user rejected or accepted their
      findings. It is not done: name every entry of `required_unmet` with its criterion id,
      text and each finding's decision and reason, and say that finishing needs the user's
@@ -142,7 +145,14 @@ as they are. One section per entry of `contracts`, in this order:
    verifier's challenge: say so. Then **should-fix** the same way, then the number of open
    notes (`notes`). Blockers a verifier refuted (`refuted`) count as notes: name each with its
    `label` and `verification.reason`, and that the user can reopen it in a review.
-4. **Accepted risks** (`accepted_risks`) and **rejected** findings (`rejected`): each with
+4. **Waiting for your decision.** Each entry of `waiting_for_decision` (also after another
+   outcome, for example `not_converged`): its `question`, then for `kind` `criterion` the
+   criterion id, `text` and each verdict with its reason, for `kind` `finding` the `label`,
+   `severity`, `summary` and `file`:`line` (for `reason` `represented` also
+   `previous_decision`), and the `round` it belongs to. Say that they count as open
+   blockers and that the judicata-review skill asks them first in the next session where the user
+   can answer (offer it); this skill records nothing.
+5. **Accepted risks** (`accepted_risks`) and **rejected** findings (`rejected`): each with
    `label`, criterion id or `category`, `reason` and `reopen_condition`, verbatim.
 
 Leave out empty parts with one short line ("no open blockers"). No advice about fixes unless

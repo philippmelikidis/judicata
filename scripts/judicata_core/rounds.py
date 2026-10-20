@@ -10,7 +10,8 @@ Events written here (data fields):
                    revision (of the files when this check call began), places
                    (failed patterns, see findings.pattern_places)
   round_closed     round, outcome (done, continue, not_converged, round_limit,
-                   required_unmet, done_with_unmet_required; focus_clear,
+                   required_unmet, done_with_unmet_required,
+                   waiting_for_decision; focus_clear,
                    focus_open), open_blockers (criteria and blocking findings,
                    unconfirmed unmet required criteria included), focused (true:
                    a focused round, not one for the stop rule), pass,
@@ -19,7 +20,10 @@ Events written here (data fields):
                    the contract let the round pass), required_unmet (failed
                    required criteria whose findings the user all rejected or
                    accepted, see below), unmet_hash, confirmation (the
-                   finish_confirmed it carries over, or None)
+                   finish_confirmed it carries over, or None), waiting (the
+                   open decisions an unattended round left to the user, see
+                   waiting.py; [] otherwise), unattended (why the run was
+                   unattended: option, JUDICATA_UNATTENDED, gate; or None)
   finish_confirmed round, contract, unmet_hash, required_unmet: the user
                    confirmed finishing a required_unmet round (round finish)
   finding_recorded round, contract, fingerprint, category, severity, consensus,
@@ -70,6 +74,7 @@ from . import (
     stop,
     untrusted,
     verification,
+    waiting,
 )
 from .errors import JudicataError
 from .project import Project
@@ -554,7 +559,7 @@ def suppressed(entries: list[dict]) -> list[dict]:
     ]
 
 
-def close(project: Project, round_id: str) -> dict:
+def close(project: Project, round_id: str, unattended: bool = False) -> dict:
     """Evaluate the round: done if every required criterion passed and no
     blocking finding of the contract is open or resolved. A failed required
     criterion whose findings were all rejected or accepted does not block, but
@@ -563,7 +568,9 @@ def close(project: Project, round_id: str) -> dict:
     criteria with only decided findings are "decided" (done with accepted risks).
 
     With planned reviewers, every run must be in (or discarded), every
-    disagreement decided and every unconfirmed blocker candidate decided. The
+    disagreement decided and every unconfirmed blocker candidate decided. In
+    an unattended run (waiting.py) these open decisions do not refuse: they
+    count as open blockers and wait for the user (waiting_for_decision). The
     judgment results and all findings (criterion and reviewer) are recorded
     here, together with round_closed.
     """
@@ -590,12 +597,14 @@ def close(project: Project, round_id: str) -> dict:
             verification.reopened(events),
         )
     )
-    unconfirmed = [
-        e["fingerprint"]
+    entries = [
+        with_state(e, current_round.contract, before, round_id)
         for e in assessed["candidates"]
-        if with_state(e, current_round.contract, before, round_id)["needs_decision"]
     ]
-    if assessed["needs_verdict"] or unconfirmed:
+    unconfirmed = [e["fingerprint"] for e in entries if e["needs_decision"]]
+    mode = waiting.unattended(current_round.stop, unattended)
+    waits = waiting.records(current_round, assessed, entries)
+    if (assessed["needs_verdict"] or unconfirmed) and not mode["unattended"]:
         parts = []
         if assessed["needs_verdict"]:
             parts.append(
@@ -640,12 +649,12 @@ def close(project: Project, round_id: str) -> dict:
         # a focused round answers for its focus only; a full one for everything
         and (current_round.focus is None or states.in_view(current_round, item.info))
     ]
-    done = not blockers and not blocking and not required_pending
+    done = not blockers and not blocking and not required_pending and not waits
     unmet = view["unmet"]
     unmet_hash = _unmet_hash(contract_name, unmet) if unmet else None
     confirmation = None
     focused = current_round.focus is not None
-    open_blockers = len(blockers) + len(blocking)
+    open_blockers = len(blockers) + len(blocking) + len(waits)
     if focused:  # a part of the contract is never "done" for all of it
         outcome = "focus_clear" if done and not unmet else "focus_open"
         rule = stop.not_counted(current_round)
@@ -659,6 +668,8 @@ def close(project: Project, round_id: str) -> dict:
         outcome, rule = judged["outcome"], judged["stop"]
         if outcome == "done" and unmet:
             outcome = DONE_UNMET
+        elif outcome == "continue" and waits:  # the user decides, later
+            outcome = stop.WAITING
         elif outcome == "continue" and done:  # only the unmet ones are left
             outcome = REQUIRED_UNMET
         rule["ended"] = outcome in stop.ENDS
@@ -690,6 +701,8 @@ def close(project: Project, round_id: str) -> dict:
                     "required_unmet": [_unmet_record(item) for item in unmet],
                     "unmet_hash": unmet_hash,
                     "confirmation": confirmation,
+                    "waiting": waits,
+                    "unattended": mode["reason"],
                 },
             )
         ],
@@ -736,6 +749,10 @@ def close(project: Project, round_id: str) -> dict:
             "discarded": consensus.discarded_runs(current_round),
         },
         "verification": _verification(current_round, eligible),
+        "unattended": mode,
+        "waiting_for_decision": [
+            waiting.shown(current_round, record, after) for record in waits
+        ],
     }
 
 
