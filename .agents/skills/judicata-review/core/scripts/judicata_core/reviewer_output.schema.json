@@ -76,12 +76,12 @@
           "minLength": 1
         },
         "line": {
-          "description": "1-based line number the quote starts at (within 5 lines).",
+          "description": "1-based line number the quote starts at, exactly.",
           "type": "integer",
           "minimum": 1
         },
         "quote": {
-          "description": "Verbatim text from the file at that line.",
+          "description": "Verbatim text from the file, starting at that line; it may run on over the following lines. Only whitespace may differ.",
           "type": "string",
           "minLength": 1,
           "maxLength": 500
@@ -129,7 +129,7 @@
           "minLength": 1
         },
         "line": {
-          "description": "1-based line number the quote starts at (within 5 lines).",
+          "description": "1-based line number the quote starts at, exactly.",
           "type": "integer",
           "minimum": 1
         },
@@ -139,7 +139,7 @@
           "maxLength": 200
         },
         "quote": {
-          "description": "Verbatim text from the file at that line.",
+          "description": "Verbatim text from the file, starting at that line; it may run on over the following lines. Only whitespace may differ.",
           "type": "string",
           "minLength": 1,
           "maxLength": 500

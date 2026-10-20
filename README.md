@@ -166,7 +166,8 @@ flowchart LR
   reviewer (your choice, or a contract without judgment criteria), its findings count directly. Want something else? Say "only
   one reviewer" or "use Opus and Sonnet".
 - **Blockers need evidence.** Outside the contract, only a correctness, security or factual
-  finding with a concrete scenario can block. Everything else is at most a note.
+  finding with a concrete scenario can block. Everything else is at most a note. Every quote a
+  reviewer cites must read exactly at the cited file and line, so no reviewer can invent one.
 - **The core is a plain Python command line.** Skills and hooks only call it, so the same rules
   apply in every host and every session.
 

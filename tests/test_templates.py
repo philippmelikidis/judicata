@@ -56,7 +56,7 @@ def test_show_returns_the_template_and_a_proposal_to_edit(project):
     draft = shown["proposal"]
     assert draft["name"] == "prose" and draft["paths"] == []
     assert draft["reviewers"] == {"count": 2, "models": ["inherit"]}
-    assert draft["stop"] == {"max_rounds": 5, "stall_rounds": 2}
+    assert draft["stop"] == {"max_rounds": 5, "stall_rounds": 2, "gate": "warn"}
     assert {"fill", "hint", "params"}.isdisjoint(draft["criteria"][1])
     assert draft["criteria"][1]["max_words"] == 400
 

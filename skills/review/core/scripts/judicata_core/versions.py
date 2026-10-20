@@ -245,6 +245,9 @@ def diff(old: dict | None, new: dict) -> dict:
 
     def pair(key):
         before = None if old is None else old.get(key)
+        if old is not None and key in contract.ADDED_IN_0_2:
+            # a version recorded by 0.1 has the defaults of the fields added later
+            before = {**contract.ADDED_IN_0_2[key], **(before or {})}
         after = new[key]
         return None if before == after else {"from": before, "to": after}
 
@@ -278,6 +281,7 @@ def diff(old: dict | None, new: dict) -> dict:
         "paths": paths,
         "reviewers": pair("reviewers"),
         "stop": pair("stop"),
+        "verifier": pair("verifier"),
         "criteria": {
             "added": added,
             "removed": [c for i, c in old_criteria.items() if i not in new_ids],
@@ -530,6 +534,9 @@ def to_toml(current: contract.Contract) -> str:
         "",
         "[stop]",
         *(f"{key} = {_value(value)}" for key, value in current.stop.items()),
+        "",
+        "[verifier]",
+        *(f"{key} = {_value(value)}" for key, value in current.verifier.items()),
     ]
     for criterion in current.criteria:
         lines += [
