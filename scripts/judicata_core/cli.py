@@ -19,10 +19,12 @@ from . import (
     contract,
     decisions,
     findings,
+    gate,
     review,
     rounds,
     session,
     status,
+    subagent,
     templates,
     untrusted,
     verifier,
@@ -599,8 +601,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str]) -> int:
-    if argv[:1] == ["hook"]:  # hook output, not the JSON envelope (session.py)
-        return session.main(argv[1:])
+    if argv[:1] == ["hook"]:  # hook output, not the JSON envelope
+        if argv[1:2] == ["stop"]:
+            return gate.main(argv[1:])  # gate.py
+        if argv[1:2] == ["subagent-stop"]:
+            return subagent.main(argv[1:])  # subagent.py
+        return session.main(argv[1:])  # session.py
     try:
         args = build_parser().parse_args(argv)
         payload = args.handler(args, Project(args.project))

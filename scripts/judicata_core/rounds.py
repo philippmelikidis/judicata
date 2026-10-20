@@ -63,6 +63,7 @@ from . import (
     contract,
     findings,
     ledger,
+    names,
     narrow,
     revision,
     states,
@@ -1029,11 +1030,17 @@ def _changed_since(project: Project, events: list[dict], current_round: Round):
         return True
     if latest is not None and latest != current_round.contract_hash:
         return True
-    seen = (current_round.revision or {}).get("content")
-    for data in current_round.results.values():  # in ledger order: the last check
-        seen = (data.get("revision") or {}).get("content") or seen
     files = assignment.scope(project, current, current_round.only).files
-    return revision.revision(project, files)["content"] != seen
+    return revision.revision(project, files)["content"] != seen_content(current_round)
+
+
+def seen_content(found: Round) -> str | None:
+    """The content hash of the files a round last looked at: its last check,
+    else its start (verdicts from round close carry no revision)."""
+    seen = (found.revision or {}).get("content")
+    for data in found.results.values():  # in ledger order: the last check
+        seen = (data.get("revision") or {}).get("content") or seen
+    return seen
 
 
 def recorded(events: list[dict], round_id: str) -> list[dict]:
@@ -1122,7 +1129,7 @@ def _require_recorded(project: Project, current: contract.Contract) -> None:
             "contract_edited",
             f"contract {current.name!r} was edited by hand and differs from its "
             f"recorded version {latest.get('version')}; record the change through "
-            "/judicata:contract or restore the file",
+            f"{names.skill('contract')} or restore the file",
             {
                 "contract": current.name,
                 "file": current.file,
