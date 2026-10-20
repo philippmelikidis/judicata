@@ -72,7 +72,7 @@
           "minLength": 1
         },
         "output": {
-          "description": "command: text copied verbatim from that command's output that shows the case is handled.",
+          "description": "command: one or more whole lines copied verbatim from that command's output that show the case is handled.",
           "type": "string",
           "minLength": 1,
           "maxLength": 500

@@ -56,12 +56,12 @@ At least one entry in `counter_evidence`, each one of:
   file in scope, at that line (the quote must start within 5 lines of it), that handles the
   case, for example the guard that makes the scenario impossible.
 - `{"kind": "command", "criterion": ..., "output": ...}`: a command criterion from the data
-  block that passed, with text copied verbatim from its output that shows the case is
-  handled, for example the passing test named after the case. A passing command whose
+  block that passed, with one or more whole lines copied verbatim from its output that show
+  the case is handled, for example the passing test named after the case. A passing command whose
   output says nothing about the case is no counter-evidence.
 
 judicata checks every entry: the file must be in scope, the quote at that line, the command
-must have passed and the output must contain your text. A refutation without a valid entry
+must have passed on the files as they are now and its output must have your lines. A refutation without a valid entry
 is recorded as inconclusive, so the blocker stays.
 
 ## Answer

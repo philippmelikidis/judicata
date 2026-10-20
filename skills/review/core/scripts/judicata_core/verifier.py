@@ -16,9 +16,20 @@ import json
 import uuid
 from pathlib import Path
 
-from . import contract, ledger, review, rounds, states, untrusted, verification
+from . import (
+    assignment,
+    contract,
+    ledger,
+    review,
+    revision,
+    rounds,
+    states,
+    untrusted,
+    verification,
+)
 from .errors import JudicataError
 from .project import Project
+from .scope import Scope
 
 SCHEMA_FILE = Path(__file__).with_name("verifier_output.schema.json")
 OUTPUT_LIMIT = 2000  # characters of a command's output in the task
@@ -317,10 +328,12 @@ def submit(
 
 
 def _counter_evidence(project: Project, current_round, raw: dict):
-    """(kept, dropped problems): every entry checked against the files in scope
-    and the command results of the round."""
+    """(kept, dropped problems): every entry checked against the files of the
+    contract (a narrowed round included: a guard can sit in a caller) and the
+    command results of the round on the files as they are now."""
     kept, dropped = [], []
     in_scope: set[str] | None = None
+    now: str | None = None
     for index, item in enumerate(raw.get("counter_evidence") or []):
         where = f"counter_evidence[{index}]"
         if item["kind"] == "quote":
@@ -334,7 +347,11 @@ def _counter_evidence(project: Project, current_round, raw: dict):
             if place is None:
                 continue
             if in_scope is None:
-                in_scope = review.scope_of(project, current_round)
+                plan = current_round.plan
+                left_out = set(plan["exclude"])
+                in_scope = {
+                    f for f in Scope(project, plan["paths"]).files if f not in left_out
+                }
             if place.location["file"] not in in_scope:
                 dropped.append(
                     review._problem(
@@ -364,10 +381,30 @@ def _counter_evidence(project: Project, current_round, raw: dict):
                 review._problem(f"{where}.criterion", "the command did not pass")
             )
             continue
-        evidence = result.get("evidence") or {}
-        if _squash(item["output"]) not in _squash(evidence.get("output_tail") or ""):
+        if now is None:
+            current = contract.select(project, current_round.contract)
+            files = assignment.scope(project, current, current_round.only).files
+            now = revision.revision(project, files)["content"]
+        if (result.get("revision") or {}).get("content") != now:
             dropped.append(
-                review._problem(f"{where}.output", "not in the command's output")
+                review._problem(
+                    f"{where}.criterion",
+                    "files in scope changed since the command ran, its result is "
+                    "outdated",
+                )
+            )
+            continue
+        evidence = result.get("evidence") or {}
+        tail = {
+            _squash(line) for line in (evidence.get("output_tail") or "").splitlines()
+        }
+        wanted = [_squash(line) for line in item["output"].splitlines() if line.strip()]
+        if not wanted or not all(line in tail for line in wanted):
+            dropped.append(
+                review._problem(
+                    f"{where}.output",
+                    "not whole lines of the command's output, copy them verbatim",
+                )
             )
             continue
         kept.append(

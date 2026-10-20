@@ -278,8 +278,9 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   marked) and `output_schema` (`verifier_output.schema.json`). The verifier runs no command itself: approved
   commands already ran in `round check` on the same files. `verify submit --round R --run X [--self]` validates
   JSON and schema (`invalid_verifier_output`, retry once, then discarded), then checks the counter-evidence of a
-  refutation: quote = `review._location` plus a file in the round's scope (`review.scope_of`), command = a command
-  criterion of the round that passed, the output text in its `output_tail`; failing entries go to `dropped`, a
+  refutation: quote = `review._location` plus a file of the contract's scope (planned paths without `exclude`, also
+  in a narrowed round: a guard can sit in a caller), command = a command criterion of the round that passed on the
+  files as they are now (revision content), the output as whole lines of its `output_tail`; failing entries go to `dropped`, a
   refutation without a valid one is stored as `inconclusive` with `downgraded` (`claimed` keeps the answer).
   `--self` stores `independent` false. `verify discard`, `verify reopen --round R --fingerprint F --reason`
   (`not_refuted`, `stale_round` if a later round recorded the finding). Effects (`states.py`): a verdict belongs

@@ -548,3 +548,44 @@ def test_a_later_round_that_sees_the_blocker_again_verifies_it_afresh(project):
     assert run["blocker"]["criterion"] == "JUD-1"
     assert finding["severity"] == "blocker"
     assert finding["verification"] is None
+
+
+def test_a_command_counts_only_with_a_whole_line_of_its_output(project):
+    setup(project, command=PASSING_TESTS)
+    round_id = reviewed(project, reviewer_output("fail"))
+    output = json.loads(verifier_output("refuted_command"))
+    output["counter_evidence"][0]["output"] = "S"
+
+    [run] = project.ok("verify", "plan", "--round", round_id)["runs"]
+    code, submitted = verify(project, round_id, run, json.dumps(output))
+
+    assert code == 0, submitted
+    assert submitted["verdict"] == "inconclusive"
+    assert submitted["dropped"][0]["field"] == "counter_evidence[0].output"
+
+
+def test_a_command_result_from_before_a_change_is_no_counter_evidence(project):
+    setup(project, command=PASSING_TESTS)
+    round_id = reviewed(project, reviewer_output("fail"))
+    (project.root / "src" / "callers.py").write_text(
+        "changed = True\n", encoding="utf-8"
+    )
+
+    submitted = verified_with(project, round_id, "refuted_command")
+
+    assert submitted["verdict"] == "inconclusive"
+    assert "changed" in submitted["dropped"][0]["problem"]
+
+
+def test_a_narrowed_round_takes_counter_evidence_from_the_whole_contract(project):
+    setup(project)
+    round_id = project.ok("round", "start", "--for", "src/app.py")["round"]
+    project.ok("round", "check", "--round", round_id)
+    plan = project.ok("review", "plan", "--round", round_id)
+    for run in plan["runs"]:
+        code, payload = project.submit(round_id, run, reviewer_output("fail"))
+        assert code == 0, payload
+
+    submitted = verified_with(project, round_id, "refuted")
+
+    assert submitted["verdict"] == "refuted"
