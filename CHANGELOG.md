@@ -7,6 +7,8 @@ version users get: Claude Code updates the plugin only when it goes up.
 ## [Unreleased]
 
 - Contract format 0.2: `[stop] gate` (`warn` by default, or `block`), a `[verifier]` table with `model` (default `inherit`) and `max_runs` (default 5), and the check kind `references` with `code_paths` (default off). Contracts from 0.1 load unchanged, keep their recorded version and get the defaults; `contract show` and the interview show the new fields. Until the references check ships, references criteria stay pending with that reason.
+- Reviewer quotes are checked strictly: a quote must start at the cited line of the cited file (only whitespace and line breaks may differ). A quote that is elsewhere or nowhere is rejected like any invalid reviewer answer, and the reason names the lines where it does start. Before, a quote within 5 lines was accepted and moved to its line.
+- Line numbers of reviewer places count line breaks only, as the reviewer's Read tool and the pattern check do; a form feed or a Unicode line separator no longer starts a new line. In a file with such characters a decided finding may come back to you once.
 
 ## [0.1.0] - 2026-10-19
 

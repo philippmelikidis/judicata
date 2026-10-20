@@ -21,6 +21,7 @@ review findings shows the consensus over the findings outside the contract
 (findings.py); round close records them.
 """
 
+import bisect
 import hashlib
 import json
 import re
@@ -29,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import (
+    address,
     assignment,
     changes,
     consensus,
@@ -49,7 +51,7 @@ SCHEMA_FILE = Path(__file__).with_name("reviewer_output.schema.json")
 MAX_INPUT_BYTES = 1024 * 1024
 MAX_STORED_PROBLEMS = 20
 MAX_DECISIONS = 100  # decisions listed for the reviewers, decisions_count has all
-QUOTE_WINDOW = 5  # lines around "line" the quote may start in
+QUOTE_LINES_SHOWN = 3  # lines named when a quote starts elsewhere
 FENCE_RE = re.compile(r"^```[A-Za-z]*\s*\n(.*)\n```$", re.DOTALL)
 
 
@@ -607,7 +609,7 @@ class _Place:
     location: dict  # {file, line, quote}, file relative to the project
     digest: str  # SHA-256 of the file
     text: str  # the file's text
-    anchor: int  # the line the quote starts at, nearest to "line"
+    anchor: int  # the line the quote starts at (the cited one)
 
 
 def _location(project: Project, location: dict, where: str, problems: list):
@@ -638,51 +640,73 @@ def _location(project: Project, location: dict, where: str, problems: list):
         )
         return None
     text = data.decode("utf-8", errors="replace")
-    lines = text.splitlines()
+    lines = address.split_lines(text)
     if line > len(lines):
         problems.append(
             _problem(f"{where}.line", f"{relative} has only {len(lines)} lines")
         )
         return None
-    start = max(0, line - 1 - QUOTE_WINDOW)
-    end = line + QUOTE_WINDOW + quote.count("\n")
-    if _squash(quote) not in _squash("\n".join(lines[start:end])):
-        problems.append(
-            _problem(
-                f"{where}.quote",
-                f"not found in {relative} within {QUOTE_WINDOW} lines of line {line}, "
-                "quote the file verbatim",
-            )
-        )
+    starts = _quote_lines(lines, quote, line)
+    if starts != [line]:
+        problems.append(_problem(f"{where}.quote", _misquoted(relative, line, starts)))
         return None
     place = {"file": relative, "line": line, "quote": quote}
-    return _Place(
-        place, hashlib.sha256(data).hexdigest(), text, _anchor(lines, line, quote)
-    )
+    return _Place(place, hashlib.sha256(data).hexdigest(), text, line)
 
 
-def _anchor(lines: list[str], line: int, quote: str) -> int:
-    """The line nearest to "line" where the quote starts.
+def _quote_lines(lines: list[str], quote: str, line: int) -> list[int]:
+    """[line] if the quote starts at that line, else every line it starts at.
 
-    Preferred: the whole quote reads on from that line. Otherwise the first line
-    of the quote is on it (a reflowed quote), else "line" as given.
+    Compared whitespace-normalized: the file's lines are joined with single
+    spaces and runs of whitespace in both are squashed, so indentation, tabs,
+    line endings and line breaks do not matter; every other character must
+    match. A quote may start inside a line and run on over the following ones.
+    The cited line is tried first; the other lines are only searched for the
+    reason of a rejection, one hit per line.
     """
-    parts = [_squash(q) for q in quote.splitlines() if q.strip()]
-    if not parts:
-        return line
-    whole, count = _squash(quote), len(quote.splitlines())
-    window = range(
-        max(1, line - QUOTE_WINDOW), min(len(lines), line + QUOTE_WINDOW) + 1
+    wanted = _squash(quote)
+    if not wanted:
+        return []
+    begins, pieces, offset = [], [], 0
+    for text in lines:
+        begins.append(offset)  # where this line starts in the joined text
+        piece = _squash(text)
+        if piece:
+            pieces.append(piece)
+            offset += len(piece) + 1
+    joined = " ".join(pieces)
+    begins.append(len(joined) + 1)  # past the last line
+    position = joined.find(wanted, begins[line - 1])
+    if position != -1 and position < begins[line]:
+        return [line]
+    found, position = [], joined.find(wanted)
+    while position != -1:
+        number = bisect.bisect_right(begins, position)
+        found.append(number)
+        position = joined.find(wanted, begins[number])  # on from the next line
+    return found
+
+
+def _misquoted(relative: str, line: int, starts: list[int]) -> str:
+    """Why a quote is rejected, with the lines it does start at."""
+    if not starts:
+        return (
+            f"not found in {relative}, quote the file verbatim "
+            "(only whitespace may differ)"
+        )
+    nearest = sorted(starts, key=lambda n: (abs(n - line), n))
+    shown = [str(n) for n in nearest[:QUOTE_LINES_SHOWN]]
+    more = len(nearest) - len(shown)
+    if len(shown) == 1:
+        where = f"line {shown[0]}"
+    elif more:
+        where = f"lines {', '.join(shown)} and {more} more"
+    else:
+        where = f"lines {', '.join(shown[:-1])} and {shown[-1]}"
+    return (
+        f"not at line {line} of {relative}: the quote starts at {where}, "
+        "cite the line it starts at"
     )
-    nearest = sorted(window, key=lambda n: (abs(n - line), n))
-    for number in nearest:
-        following = _squash("\n".join(lines[number - 1 : number - 1 + count]))
-        if parts[0] in _squash(lines[number - 1]) and whole in following:
-            return number
-    for number in nearest:
-        if parts[0] in _squash(lines[number - 1]):
-            return number
-    return line
 
 
 def _squash(text: str) -> str:
