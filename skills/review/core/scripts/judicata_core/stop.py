@@ -60,8 +60,13 @@ def key(found) -> tuple:
     return (found.contract, scope["kind"], paths, scope["base"])
 
 
+LIMITS = ("max_rounds", "stall_rounds")
+
+
 def limits(found) -> dict:
-    return {**contract.DEFAULT_STOP, **(found.stop or {})}
+    """max_rounds and stall_rounds of a round (the gate is no limit)."""
+    given = {**contract.DEFAULT_STOP, **(found.stop or {})}
+    return {key: given[key] for key in LIMITS}
 
 
 def focused(found) -> bool:

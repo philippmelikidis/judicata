@@ -17,7 +17,8 @@ def test_show_lists_criteria_with_check_and_required_reviewers_and_stop_rule(pro
     ]
     assert contract["criteria"][0]["params"] == {"command": "true", "timeout": 600}
     assert contract["reviewers"] == {"count": 2, "models": ["inherit"]}
-    assert contract["stop"] == {"max_rounds": 5, "stall_rounds": 2}
+    assert contract["stop"] == {"max_rounds": 5, "stall_rounds": 2, "gate": "warn"}
+    assert contract["verifier"] == {"model": "inherit", "max_runs": 5}
     assert shown["version"] == 1
     assert shown["status"] == "recorded"
 

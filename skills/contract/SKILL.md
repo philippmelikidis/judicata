@@ -1,6 +1,6 @@
 ---
 name: contract
-description: Show the judicata contract of a project, create the first one in a short interview from a template (code, docs, prose), or change it when the user explicitly asks. Use for /judicata:contract, when the user asks what the contract or the criteria are, when they ask to change, add, drop or relax a criterion, the paths, the reviewers or the stop rule, and when a judicata review finds no contract.
+description: Show the judicata contract of a project, create the first one in a short interview from a template (code, docs, prose), or change it when the user explicitly asks. Use for /judicata:contract, when the user asks what the contract or the criteria are, when they ask to change, add, drop or relax a criterion, the paths, the reviewers, the stop rule, the stop gate or the verifier, and when a judicata review finds no contract.
 license: MIT
 compatibility: Needs python3 3.11 or newer. Install all three judicata skills (review, contract, status) together; the review skill ships the core.
 ---
@@ -8,8 +8,9 @@ compatibility: Needs python3 3.11 or newer. Install all three judicata skills (r
 # judicata contract
 
 A contract in `.judicata/contracts/<name>.toml` says when an artifact is done: criteria, each
-with a check (`command`, `pattern` or `judgment`) and marked required or optional, plus the
-reviewers and the stop rule. Once stored it is frozen. The core command line validates and
+with a check (`command`, `pattern`, `judgment` or `references`) and marked required or
+optional, plus the reviewers, the stop rule with its gate and the verifier. Once stored it is
+frozen. The core command line validates and
 stores it and records every version in `.judicata/ledger.jsonl`.
 
 ## Rules
@@ -50,7 +51,7 @@ outside the project. Every call prints one JSON object. `"ok": true` means succe
 
 ```
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" contract create --project <dir> --state-dir "${CLAUDE_PLUGIN_DATA}" <<'JSON'
-{"name": "code", "template": "code", "paths": ["src/**"], "reviewers": {...}, "stop": {...}, "criteria": [...]}
+{"name": "code", "template": "code", "paths": ["src/**"], "reviewers": {...}, "stop": {...}, "verifier": {...}, "criteria": [...]}
 JSON
 ```
 
@@ -98,10 +99,20 @@ Render `contract` readably:
 
 1. A heading with the name, the template, `paths` and the version (`version`).
 2. A table: ID, criterion text, check (for `command` the command and its timeout, for
-   `pattern` the rule and its value, for `judgment` "reviewers decide"), required or optional.
+   `pattern` the rule and its value, for `judgment` "reviewers decide", for `references`
+   "links, anchors, images and citation keys exist", plus "and paths in backticks" if
+   `code_paths` is true), required or optional.
 3. Reviewers: `count` and `models` (`inherit` means the model of the user's chat).
 4. Stop rule: at most `max_rounds` rounds, "not converged" after `stall_rounds` rounds without
-   fewer open blockers.
+   fewer open blockers. Stop gate (`stop.gate`): `warn` (the default) means a one-line warning
+   when the agent ends its turn while the work is not reviewed and done, `block` means the
+   agent may not end its turn claiming done then.
+5. Verifier: `model` (`inherit` means the model of the user's chat) and at most `max_runs`
+   runs per round that try to refute blockers before they hold up done.
+
+In this version of judicata the stop gate, the verifier and the `references` check are not
+active yet: their settings are stored and shown, but nothing warns, blocks or verifies, and a
+`references` criterion stays pending. Say so in one line below the stop rule and verifier.
 
 If `status` is `changed`, say that the file was edited outside judicata and differs from the
 recorded version `latest_version`, and that reviews refuse it (`contract_edited`) until the
@@ -145,7 +156,8 @@ changed or removed criteria lapse.
 2. **Difference.** Show `diff` as a short list, `from_version` to `version`:
    - `criteria.added`, `criteria.removed`, and `criteria.changed` with each entry of
      `changes` as field: from -> to; `criteria.order` if the order changed.
-   - `paths` (added, removed), `reviewers`, `stop` and `template` where they are not `null`.
+   - `paths` (added, removed), `reviewers`, `stop`, `verifier` and `template` where they are
+     not `null`.
    - Decisions: every entry of `findings.lapse` (its `label`, `criterion`, `state` and the
      `decision` reason, if any) loses its decision and is closed; the next review judges the
      changed criterion afresh. `findings.decisions_kept` decisions stay.
@@ -179,9 +191,9 @@ changed or removed criteria lapse.
 ## Interview
 
 Run it when the user asks for a contract, or when a review finds none (then you know the
-artifact: the files, module or diff the user wants reviewed). Keep it short: four questions at
-most. Ask every question with the AskUserQuestion tool, the default always as the first option
-with "(Recommended)" in its label, so that Enter takes it.
+artifact: the files, module or diff the user wants reviewed). Keep it short: four
+AskUserQuestion calls at most. Ask every question with the AskUserQuestion tool, the default
+always as the first option with "(Recommended)" in its label, so that Enter takes it.
 
 1. **Template.** Ask the core which template fits the artifact. Pass files or directories of the
    artifact (for a diff: `git diff --name-only <base>...HEAD`).
@@ -229,7 +241,7 @@ with "(Recommended)" in its label, so that Enter takes it.
    their own words what to drop, add, reword or mark required or optional, apply exactly that,
    show the table again and ask again.
 
-4. **Reviewers and stop rule.** One AskUserQuestion call with two questions:
+4. **Reviewers, stop rule, gate and verifier.** One AskUserQuestion call with four questions:
    - "Reviewers": "2 reviewers, model of this chat (Recommended)" =
      `{"count": 2, "models": ["inherit"]}`; "1 reviewer, model of this chat" =
      `{"count": 1, "models": ["inherit"]}`; "2 reviewers, Opus and Sonnet" =
@@ -237,7 +249,18 @@ with "(Recommended)" in its label, so that Enter takes it.
    - "Stop rule": "At most 5 rounds, not converged after 2 rounds without progress
      (Recommended)" = `{"max_rounds": 5, "stall_rounds": 2}`; "At most 3 rounds, not converged
      after 1 round without progress" = `{"max_rounds": 3, "stall_rounds": 1}`.
-   Free answers are fine: `models` has one model for all reviewers or one per reviewer.
+   - "Stop gate": "Warn only (Recommended)" = `"gate": "warn"` (a one-line warning when the
+     agent ends its turn with open blockers or unreviewed changes, the agent is not stopped);
+     "Block" = `"gate": "block"` (the agent may not claim done then; for unattended runs).
+     Put the answer into `stop` next to `max_rounds` and `stall_rounds`.
+   - "Verifier": "Model of this chat, at most 5 runs per round (Recommended)" =
+     `{"model": "inherit", "max_runs": 5}`; "Model of this chat, at most 2 runs per round" =
+     `{"model": "inherit", "max_runs": 2}`; "Sonnet, at most 5 runs per round" =
+     `{"model": "sonnet", "max_runs": 5}`. The verifier tries to refute each blocker from a
+     judgment criterion or outside the contract before it holds up done.
+   Free answers are fine: `models` has one model for all reviewers or one per reviewer,
+   `max_runs` is a whole number of at least 1. In this version the gate and the verifier are
+   only stored and take no effect yet; say so in one line with the question.
 
 5. **Store.** Put the answers into the draft and store it:
 
