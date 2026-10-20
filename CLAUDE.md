@@ -6,6 +6,8 @@ independent runs and hooks that feed the ledger into fresh sessions.
 
 - Stack: Python 3.11 or later, standard library only (core in `scripts/`), plugin parts in `skills/`, `agents/`,
   `hooks/`, evals in `evals/`. Spec: issue #3 (in philippmelikidis/judicata-dev). After changing `scripts/`,
+  `templates/`, `agents/reviewer.md` or `skills/` run `python3 tools/bundle_core.py` (copies in
+  `skills/review/core/` and `.agents/skills/judicata-*/`).
   `templates/` or `agents/` run `python3 tools/bundle_core.py` (copy in `skills/review/core/`).
 - Lint: `uvx ruff@0.17.1 check . && uvx ruff@0.17.1 format --check .`
 - Tests: `uv run --with pytest==9.1.1 pytest`
@@ -192,11 +194,14 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `review submit --round R --run X` (stdin or `--file`) validates against `reviewer_output.schema.json` (a subset
   of JSON Schema, validator in `schema.py`), then semantically: every judgment criterion exactly once, a failure
   needs a place within the contract's scope (`scope.py`, `paths` is in the plan), every place lies in a project
-  file outside `.git/` and `.judicata/`, the line exists, the quote at most 5 lines away. Invalid =
+  file outside `.git/` and `.judicata/`, the line exists, the quote starts exactly at that line (`_quote_lines`:
+  file lines joined with spaces, whitespace squashed on both sides, otherwise verbatim; a quote may start inside the
+  line and run on; the rejection names the lines it does start at, nearest first). Invalid =
   `invalid_reviewer_output` (`details.retry`), the second rejection discards the run. `review discard` for runs
   without an answer, `review verdicts` shows the consensus, `review decide` stores the user's decision. Findings
-  (`$defs/finding`) lie within the scope (without `exclude`, like verdicts), the line is aligned to the quote
-  (`_anchor`, whole quote first); `review findings` shows their consensus. The skill always plans reviewers, also
+  (`$defs/finding`) lie within the scope (without `exclude`, like verdicts), stored at the cited line;
+  `review findings` shows their consensus. Lines are split at line breaks only (`address.split_lines`: `\n`,
+  `\r\n`, `\r`, never form feeds or Unicode separators), as in the pattern check. The skill always plans reviewers, also
   without judgment criteria (then 1). `review plan` includes `decisions` (`decisions_for`: rejected/accepted within
   the round's scope and focus, criterion findings only from judgment criteria of the round with the same hash, at
   most 100, `decisions_count`). Criteria and decisions are defused (criterion text up to 400 characters) and carry
@@ -341,6 +346,50 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   hosts without hooks: finds the root like the hook (`find_root` from `--project`, not above the Git root) and
   returns it as `project` (the skills use it as `<dir>`); without one `found` false, `project` and `context` null.
   Hook and summary share `_safe_context`.
+- `subagent.py` (hook, v0.2 #13): `judicata.py hook subagent-stop` (`cli.main` hands off to `subagent.main`), run by
+  `hooks/hooks.json` for every SubagentStop (no matcher, the core picks the agent). Acts only for judicata's own
+  agents, by `agent_type` in `subagent.AGENTS` (`judicata:reviewer` -> `review.output_schema`; the verifier joins
+  there with its schema): checks `last_assistant_message` with `review.parse_output` (the first stage of `review
+  submit`: size, fence, JSON, schema) and, if invalid and `stop_hook_active` is not `true`, prints `{"decision":
+  "block", "reason": ...}` with every problem as `- field: problem` (at most 200, cleaned with `untrusted.clean`).
+  Otherwise, for other agents, without a message or on any error nothing, exit always 0, writes nothing. Places,
+  criteria and the round stay with `review submit`, which validates every answer itself. Codex: `agent_type` is always
+  `default` (spike #6), so the hook never acts there and Codex relies on the core check. A marker in the task would
+  have to be read from Codex's rollout file (`agent_transcript_path`, an internal format, not tested), so there is
+  none.
+  Hook and summary share `_safe_context`. The hook also calls `started.record` (session start marker, see below).
+- `gate.py` (stop gate, #12 warn mode): `judicata.py hook stop` (`cli.main` routes `hook stop` here, everything
+  else to `session.main`), registered in `hooks/hooks.json` on `Stop` (Claude Code and Codex). Reads the hook input
+  (`session.read_input`, `session.start_dir`, `session.find_root`), the transcript (`transcript_path`: round ids
+  after `--round` or first in the core's `{"ok": true, "round": ...}` answer = the session's rounds, first
+  `"timestamp"` = session start; host-agnostic regexes over the raw bytes, Claude Code and Codex rollouts) and the
+  ledger. Per contract: (a) the session's latest round (by `started_seq`) is not closed or its `Round.outcome` is
+  not in `stop.ENDS` (focused rounds included), and no later final round covers it (`_covers`: same `stop.key` or
+  the whole contract); names open blockers from `status.show`; (b) per scope key the latest final round that no
+  later round covers: files of its scope (`assignment.scope(project, contract, round.only)`) with mtime at or after
+  the session start and its last check (`_seen_at`, 2 s slack), or a changed folder time (`_dirs`: parents of the
+  files and the fixed start of each path pattern, for removed files), and `revision.content_hash` of those files
+  differs from `rounds.seen_content(round)`; the hash covers the scope as a whole, so the line names the files
+  written in the session, not the differing ones. Output
+  `{"systemMessage": "judicata: ..."}` in one line (at most 600 characters, repo text through `untrusted.clean`),
+  never a decision; nothing without `.judicata/`, without a touched contract or on any error, exit always 0.
+  Without a transcript (`claude -p --no-session-persistence`) the start comes from `started.recalled` and the
+  session's rounds are those whose `round_started` ts is at or after it. Every `Problem` carries the gate mode of
+  its contract; `answer()` is the one place that turns problems into output. Block mode (#15): `gate = "block"` or
+  `JUDICATA_GATE` (`warn`/`block`, case and spaces ignored, other values ignored, overrides every contract) gives
+  `{"decision": "block", "reason", "systemMessage"}`; the reason names only the block contracts' problems and says
+  what to do (review again, or tell the user honestly it is not done and end with the line `judicata: not done`),
+  the message all problems. `last_assistant_message` (Claude Code and Codex) whose last non-empty line starts with that marker
+  (`HONEST`, markdown and case ignored) = honest report: warn only, not counted. At most
+  `MAX_BLOCKS` (3) per session, counted in `<state>/gate/<same key as started.py>.json` {blocks, released}; the
+  next stop warns and appends `gate_released` {session, blocks, contracts, reason `block_limit`} once (the released
+  flag is saved after the ledger took it; a failed write is retried at the next stop and never keeps the block). No
+  usable count (no session id, state not writable or unreadable): warn only (`uncounted`), so the limit always
+  holds and `stop_hook_active` needs no rule.
+- `started.py`: session start markers `<state>/sessions/<sha256 of [root, session_id]>.json` {started}
+  (`started.path(root, session_id, folder)`, also used for the gate's block count)
+  (`approvals.state_dir`, outside the project), written by the SessionStart hook only if absent (resume, clear
+  and compact keep it, `O_EXCL`), markers older than 30 days pruned on write, every error ignored.
 
 **Ledger** (`ledger.py`): `.judicata/ledger.jsonl`, append only, one line per event
 `{"id": uuid4-hex, "ts": UTC ISO 8601 with Z, "type": snake_case, "data": {...}}`. Reading drops duplicate IDs
@@ -361,6 +410,7 @@ address, label, section_hash, file, line, summary, sightings[...]}, `contract_ve
 ... per name), contract_hash, template, paths, reviewers, stop, criteria[{id, text, check, required, params,
 hash}]}, `approval_logged` {contract, version, contract_hash, reason (`created`, `changed`)}: a log entry only, the
 core never reads it, it approves nothing. `contract_assigned` {path (relative, `.` = root), contract, among}.
+`gate_released` {session, blocks, contracts, reason} (stop gate, a log entry only, replay ignores it).
 `finding_recorded` also has `source` (missing = reviewer), criterion findings also criterion, criterion_hash,
 check, required, lines. `finding_decided` {round, contract, fingerprint, decision, reason, reopen_condition, kept
 (only for keep), source, category, criterion, criterion_hash, severity, consensus, address, label, section_hash,
@@ -414,14 +464,26 @@ task), without sub-agents one reviewer with a note in the report. `status` repor
 the test: reviewers in Codex are read-only by instruction only. In skill text never write `${CLAUDE_PLUGIN_ROOT}`
 outside the commands (Claude Code substitutes it everywhere).
 
-**Plain skills** (#1): `npx skills add philippmelikidis/judicata` (skills.sh) copies only `skills/<name>/`.
-So `skills/review/core/` holds a copy of `scripts/` (entry point and package), `templates/`, `agents/reviewer.md`
+**Plain skills** (#1, prefixed names #10): `npx skills add philippmelikidis/judicata` (skills.sh) copies only skill
+folders. It installs `.agents/skills/judicata-review`, `judicata-contract` and `judicata-status` (folder = `name`),
+generated by `tools/bundle_core.py` from `skills/<name>/` (`prefixed()`: `name`, `judicata:<n>`, `skills/<n>/` and
+`<skills>/<n>/`, "the <n> skill", the list "(review, contract, status)"; the frontmatter drops `metadata.internal`;
+the review copy gets the core from the source). The plugin skills carry `metadata:` / `internal: true` (boolean),
+so `npx skills` hides them; Claude Code and Codex read only `skills/` of a plugin, so they show only `judicata:*`
+(spike #6; a `"skills"` path in plugin.json adds to `skills/` in Claude Code, so never move them). The tool exits 2
+without changing anything for a skill folder without `SKILL.md`, a plugin skill without the flag (directly below
+`metadata:`) or a `skills-lock.json` at the root (the CLI would skip the copies as installed). `name` of a copy
+comes from the folder. `names.py`: the core prints `/judicata-<name>` instead of `/judicata:<name>` (session
+context, `contract_edited`) when it lies in `<skills>/judicata-review/core/`; the contract file header names both. Fallback if the flag stops working: README command with three `--skill` options.
+Codex lists the copies as repo skills when it runs inside this repository (maintainers only). The copies count as
+shipped files (`tools/check_version.py`). `skills/review/core/` holds a copy of `scripts/` (entry point and package), `templates/`, `agents/reviewer.md`
 and `LICENSE` in the same layout (`templates.py` finds the templates relative to itself). The source stays at the
-root; `tools/bundle_core.py` rebuilds the copy (deletes and copies, skips `__pycache__`), `--check` lists every
-difference and exits 1, a missing source exits 2 without touching the copy (CI step in the test job and `test_skills_install.py`). The plugin keeps using
+root; `tools/bundle_core.py` rebuilds both copies (deletes `skills/review/core/` and every `.agents/skills/judicata-*/`,
+writes them anew, skips `__pycache__`), `--check` lists every difference and exits 1, a missing source exits 2
+without touching the copies (CI step in the test job and `test_skills_install.py`). The plugin keeps using
 `${CLAUDE_PLUGIN_ROOT}/scripts/`. Hosts that do not substitute the placeholder (Codex, plain installs) use
-`<skills>/review/core/scripts/judicata.py` (`<skills>` = the folder above the skill's folder, the same path in a
-plugin and in a plain install) and `<skills>/<name>/SKILL.md` for the other skills; the skills' section "In Codex and
+`<skills>/review/core/scripts/judicata.py` (`<skills>` = the folder above the skill's folder; in the copies
+`<skills>/judicata-review/core/...`) and `<skills>/<name>/SKILL.md` for the other skills; the skills' section "In Codex and
 other agents" says so. Plain install = no `scripts/judicata.py` above `<skills>` (a plugin root has one): no hook, so `review` and `status` run
 `session summary` first when the conversation has no session context for this project, and always say in the report
 that automatic session memory needs the plugin; reviewers via the host's sub-agents (read-only by instruction), without sub-agents one
@@ -442,7 +504,13 @@ No tests against internal functions. One file per behavior (`test_command_criter
 `_decisions`, `_states`), `test_finding_suppression.py`, `test_reviewer_decisions.py`, `test_session_hook.py`
 (via `project.hook()`: raw call like a hook, (exit, stdout, stderr)), `test_branches.py` with a real `git merge`,
 `test_review_scope.py` (diff, find, narrowed rounds), `test_session_summary.py`, `test_skills_install.py` (bundled
+core and prefixed copies equal the source, drift is reported and rebuilt, a visible plugin skill or a lock file
+exits 2, the core runs from a copy of `.agents/skills/` alone via `project.script`, every path a copy names exists
+there, no plugin name left in the copies, frontmatter), `test_review_focus.py`, `test_revision.py` also without `git`
 core equals the source, drift is reported and rebuilt, the core runs from a copy of `skills/` alone via
+`project.script`, frontmatter), `test_review_focus.py`, `test_stop_gate.py` (via `project.hook("stop", ...)` with a written transcript, Claude Code
+and Codex form, and without one after a SessionStart), `test_stop_gate_block.py` (block mode, limit, environment), `test_revision.py` also without `git`
+in PATH, `test_stop_rule.py`, `test_status.py`, `test_required_unmet.py`), `test_prompt_injection.py` (detection
 `project.script`, frontmatter), `test_review_focus.py`, `test_revision.py` also without `git`
 in PATH, `test_stop_rule.py`, `test_status.py`, `test_required_unmet.py`, `test_verifier.py` with outputs from `tests/fixtures/verifier/`), `test_prompt_injection.py` (detection
 with attack and harmless examples, marking in hook, plan, list, contract, status), `test_text_cleaning.py`
