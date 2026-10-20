@@ -6,7 +6,7 @@ copies follow from the sources, never edit them by hand:
 
 - skills/review/core/ carries everything the skills need from the plugin root:
   scripts/judicata.py with the package scripts/judicata_core/, templates/,
-  agents/reviewer.md and LICENSE, in the same layout (the core finds its
+  agents/reviewer.md, agents/verifier.md and LICENSE, in the same layout (the core finds its
   templates relative to itself). The plugin keeps using the root.
 - .agents/skills/judicata-<name>/ is a copy of every plugin skill skills/<name>/
   (with its core) under the prefixed name, so that plain installs get
@@ -43,6 +43,7 @@ SOURCES = [
     Path("scripts") / "judicata_core",
     Path("templates"),
     Path("agents") / "reviewer.md",
+    Path("agents") / "verifier.md",
     Path("LICENSE"),
 ]
 SKIP_DIRS = {"__pycache__"}

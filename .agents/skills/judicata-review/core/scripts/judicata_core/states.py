@@ -35,6 +35,12 @@ closing, reopening) can change it again: a round that began before a fix saw
 the artifact before the fix (two open rounds, merged branches).
 rejected and accepted form the register of accepted risks.
 
+Verification (verification.py): a verifier_verdict belongs to one round and
+fingerprint; the round's finding_recorded attaches it (verification). A refuted
+one makes the finding a note while it stands: not blocking, severity note. A
+later round that records the finding again starts without a verdict. A
+verdict_reopened (the user disagrees) gives the finding its severity back.
+
 Presentation of a sighting of a rejected or accepted finding (per round, set
 when the round records it, against the decision that stood before the round's
 own decisions):
@@ -54,7 +60,7 @@ or an unconfirmed one the user confirmed (fix or accept).
 
 from dataclasses import dataclass, field
 
-from . import assignment, scope, untrusted
+from . import assignment, scope, untrusted, verification
 
 ROUND_STARTED = "round_started"
 FINDING_RECORDED = "finding_recorded"
@@ -100,6 +106,7 @@ class Finding:
     history: list[dict] = field(default_factory=list)  # {round, from, to, why}
     # round id -> {"kind": "suppressed"|"represented", "previous": decision}
     presentations: dict[str, dict] = field(default_factory=dict)
+    verification: dict | None = None  # the verifier's verdict of the latest round
 
     @property
     def blocking(self) -> bool:
@@ -129,6 +136,7 @@ class Finding:
             "rounds_seen": len(self.rounds),
             "last_round": self.rounds[-1] if self.rounds else None,
             "history": self.history,
+            "verification": verification.public(self.verification),
         }
         # possible prompt injection in its text or its decision (untrusted.py)
         shown["warnings"] = untrusted.finding(shown, self.info_event)
@@ -162,16 +170,23 @@ def replay(events: list[dict], all_rounds: dict) -> dict[tuple[str, str], Findin
     found: dict[tuple[str, str], Finding] = {}
     started: dict[str, int] = {}  # round id -> ledger position of round_started
     known: dict[str, dict[str, str]] = {}  # contract -> criteria of its latest version
+    verdicts: dict[tuple, dict] = {}  # (round, contract, fingerprint) -> verdict
     for seq, event in enumerate(events):
         data = event["data"]
         if event["type"] == ROUND_STARTED:
             started[event["id"]] = seq
+        elif event["type"] in (
+            verification.VERIFIER_VERDICT,
+            verification.VERDICT_REOPENED,
+        ):
+            _verified(found, verdicts, event)
         elif event["type"] == FINDING_DECIDED:
             _decided(found, event, seq)
             _stale(found, known, data, seq)
         elif event["type"] == FINDING_RECORDED:
             item = _get(found, data["contract"], data["fingerprint"])
             _recorded(item, data, started.get(data["round"], seq), event.get("id"))
+            _verify(item, data, verdicts)
             _stale(found, known, data, seq)
         elif event["type"] == ROUND_CLOSED and data["round"] in all_rounds:
             _closed(found, all_rounds[data["round"]], started.get(data["round"], seq))
@@ -248,6 +263,44 @@ def _decided(found: dict, event: dict, seq: int) -> None:
     if data["decision"] in ("fix", "accept"):
         item.confirmed = True  # the user says it is real
     item.move(DECISIONS[data["decision"]], data["round"], data["decision"], seq)
+
+
+def _verified(found: dict, verdicts: dict, event: dict) -> None:
+    """A verdict, or the user reopening a refuted one, of a round."""
+    data = event["data"]
+    key = (data.get("round"), data.get("contract"), data.get("fingerprint"))
+    if event["type"] == verification.VERIFIER_VERDICT:
+        verdicts[key] = {**data, "event": event["id"], "ts": event.get("ts")}
+    elif key in verdicts and verdicts[key]["event"] == data.get("verdict"):
+        verdicts[key]["reopened"] = {
+            "event": event["id"],
+            "ts": event.get("ts"),
+            "reason": data.get("reason"),
+        }
+    else:
+        return
+    item = found.get(key[1:])
+    if item is not None and item.rounds and item.rounds[-1] == key[0]:
+        _verify(item, {"round": key[0]}, verdicts, recorded=False)
+
+
+def _verify(item: Finding, data: dict, verdicts: dict, recorded=True) -> None:
+    """Attach the verdict of the round that recorded the finding last."""
+    if item.rounds and item.rounds[-1] != data["round"]:
+        return  # an older round's record (merged late): its verdict is old too
+    if recorded and item.presentations.get(data["round"], {}).get("kind") == (
+        "suppressed"
+    ):
+        return  # only a sighting of a decided finding
+    found = verdicts.get((data["round"], item.contract, item.fingerprint))
+    if found is None:
+        item.verification = None
+        return
+    item.verification = found
+    if verification.refuted(found):
+        item.info["severity"] = "note"
+    elif found.get("severity") and item.info.get("severity") == "note":
+        item.info["severity"] = found["severity"]  # reopened: as it was
 
 
 def _recorded(item: Finding, data: dict, started: int, event_id=None) -> None:

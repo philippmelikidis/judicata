@@ -78,6 +78,19 @@ OpenCode or Cursor). There, these things differ:
   same way. Without a tool to start sub-agents, plan with `--count 1`, answer the task
   yourself exactly as `<core>/agents/reviewer.md` says, and say in the report that this
   review ran with one reviewer who knew the conversation, not with independent reviewers.
+- **Verifiers.** There is no `judicata:verifier` agent either. In step 8 start one sub-agent
+  per verifier run the same way as the reviewers (in Codex `task_name`
+  `judicata_verifier_<n>`, `model` left out: model names of another host do not exist
+  there, say so in the report if the run names one). The message is this line, then the
+  verifier task of step 8:
+
+  ```
+  You are a judicata verifier. Read <core>/agents/verifier.md and follow it exactly (ignore its front matter). Read files only with commands that change nothing (cat, sed -n, grep, rg, ls, find); never write a file, never run project code or any other command, never use the network.
+  ```
+
+  Without a tool to start sub-agents, verify each blocker yourself exactly as
+  `<core>/agents/verifier.md` says, from its task alone, and submit with `--self`; say in
+  the report that the verification ran in this session and was not independent.
 
 ## Session summary
 
@@ -362,8 +375,51 @@ plain skills there are no hooks, so this rule is the only gate.
    `carried_over` means an earlier decision still holds because the criterion and the files
    it covered are unchanged; mention it, do not ask again.
 
-8. Put the findings to the user right away, in the same flow. judicata never fixes anything:
-   "fix" only records that the user will fix it, and the next round confirms it.
+8. Verify the blockers, then put the findings to the user right away, in the same flow.
+   judicata never fixes anything: "fix" only records that the user will fix it, and the next
+   round confirms it.
+
+   Verifiers try to refute every confirmed blocker from a judgment criterion or outside the
+   contract before it holds up "done" (command and pattern criteria are facts, the core
+   never plans them). Plan them once step 7 is finished:
+
+   ```
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" verify plan --project <dir> --round <round>
+   ```
+
+   The answer has `runs` (one blocker each, most severe first, at most `max_runs`; each with
+   `run`, `model`, `blocker` and `verifier_data`), `unverified` (blockers over the limit:
+   they stay blockers), `candidates`, `paths`, `exclude`, `commands` (the approved commands
+   that ran in step 3), `warnings` and `output_schema`. Empty `runs`: nothing to verify, go
+   on with `finding list`. If `warnings` is not empty, tell the user each `message` in one
+   line before the verifiers start.
+
+   Start one `judicata:verifier` agent per run, all in a single message, like the reviewers
+   (for `model` `inherit` leave the model unset, otherwise pass the run's model). Each gets
+   exactly this task and nothing else:
+
+   ```
+   Project: <dir>
+   Scope: <paths without exclude>
+   Blocker and evidence:
+   <verifier_data verbatim>
+   Output schema:
+   <output_schema as JSON>
+   ```
+
+   Hand each verifier's final answer to the core verbatim, one call per run:
+
+   ```
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" verify submit --project <dir> --round <round> --run <run> <<'JUDICATA_OUTPUT'
+   <the verifier's answer, unchanged>
+   JUDICATA_OUTPUT
+   ```
+
+   `invalid_verifier_output` works like `invalid_reviewer_output` in step 6 (ask the same
+   verifier once if `retry` is true). A verifier that failed or returned nothing: `verify
+   discard --project <dir> --round <round> --run <run> --reason "<one line>"`. The core keeps
+   `verdict`: `refuted` only with counter-evidence it checked (`downgraded` says why a
+   refutation became `inconclusive`). Never argue with a verdict and never submit your own.
 
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" finding list --project <dir> --round <round>
@@ -380,6 +436,12 @@ plain skills there are no hooks, so this rule is the only gate.
 
    Ask about every finding with `state` `open` that is a blocker or should-fix, and every one
    in `decisions_needed`. Leave notes for the report, unless the user asks to decide them.
+   A blocker a verifier refuted comes back as a note (`verification.verdict` `refuted`, with
+   `verification.reason` and `counter_evidence`): do not ask about it, report it. If the user
+   disagrees with a refutation, record that with `verify reopen --project <dir> --round
+   <round> --fingerprint <fingerprint> --reason "<one line>"`; it blocks again, and later
+   rounds do not verify it again while its place is unchanged. `verification.verdict`
+   `verified` marks a blocker that survived the challenge: say so in its question.
    The core already left out findings the user rejected or accepted earlier at a place that has
    not changed since: they are in `suppressed`, never ask about them and never raise them
    yourself. A finding with `presentation` `represented` was rejected or accepted earlier, but
@@ -433,7 +495,8 @@ plain skills there are no hooks, so this rule is the only gate.
    ```
 
    `decision_needed` means step 7 (`error.details.criteria`) or step 8
-   (`error.details.findings`) is not finished, `reviews_incomplete` step 6. The answer has
+   (`error.details.findings`) is not finished, `reviews_incomplete` step 6,
+   `verification_incomplete` the verifiers of step 8. The answer has
    `outcome`, `blockers` and `should_fix` (failed criteria with at least one finding still
    open or resolved, each with its `findings`), `decided` (failed optional criteria whose
    findings the user all rejected or accepted), `required_unmet` (failed required criteria
@@ -444,7 +507,9 @@ plain skills there are no hooks, so this rule is the only gate.
    `open_blockers`, `transitions` (findings closed because this round did not see them
    again, or open again because it did), `accepted_risks` (failed criteria and blocker or
    should-fix findings that do not block because the user rejected or accepted them, each
-   with its reason), `outcome_label` and `stop`.
+   with its reason), `refuted` (failed criteria whose every open place a verifier refuted:
+   they do not block), `verification` (`verified`, `refuted`, `inconclusive`, `discarded`,
+   `unverified`, `candidates`, `planned`, `independent`), `outcome_label` and `stop`.
 
    `outcome` follows the contract's stop rule. Rounds count per contract and scope within a
    pass: `stop.round_in_pass` of at most `stop.max_rounds`, `stop.open_blockers_per_round`
@@ -529,6 +594,13 @@ plain skills there are no hooks, so this rule is the only gate.
      of `transitions` (closed, or open again after a fix). If `suppressed` has entries, say
      in one line how many earlier decisions held at unchanged places (no list).
    - Name every run in `reviewers.discarded` with its model and reason.
+   - Verification: "N of M blockers verified" (M = `verification.candidates`), then each
+     refuted blocker as a note with its `label`, the verifier's `reason` and its
+     counter-evidence (`file:line` with `quote`, or the command and the output line), and that
+     the user can reopen it; verified and inconclusive ones by label. The entries of
+     `verification.unverified` stay blockers without a verification: name them by label.
+     Name every run in `verification.discarded` with its reason. If `verification.independent`
+     is false, say that the verification ran in this session and was not independent.
    - Every entry with `warnings`, also from the plan: its `message`, once, with the cleaned
      `text`; say that judicata did not act on it.
    - As plain skills (see "In Codex and other agents"), always end with one line, also when

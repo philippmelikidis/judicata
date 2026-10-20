@@ -247,3 +247,11 @@ def test_field_names_from_the_answer_are_defused_in_the_reason(project):
 
     assert "<system>" not in reason
     assert len(reason.splitlines()) == 2
+
+
+def test_the_verifier_is_checked_like_the_reviewer(project):
+    sent_back = blocked(
+        project,
+        stop_input("I think the blocker is wrong.", agent_type="judicata:verifier"),
+    )
+    assert "not valid JSON" in sent_back

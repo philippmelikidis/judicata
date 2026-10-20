@@ -461,17 +461,7 @@ def _validate(project: Project, current_round: rounds.Round, text: str):
 
     def in_scope() -> set[str]:
         if not scope_files:
-            left_out = set(current_round.plan["exclude"])
-            inside = (
-                None
-                if current_round.only is None
-                else assignment.within(current_round.only)
-            )
-            scope_files.update(
-                f
-                for f in Scope(project, current_round.plan["paths"]).files
-                if f not in left_out and (inside is None or inside(f))
-            )
+            scope_files.update(scope_of(project, current_round))
         return scope_files
 
     verdicts, files, seen = [], {}, set()
@@ -582,6 +572,20 @@ def parse_output(text: str, wanted: dict):
     except RecursionError:
         return None, [_problem("", "nested too deeply")]
     return raw, schema.validate(raw, wanted)
+
+
+def scope_of(project: Project, current_round: rounds.Round) -> set[str]:
+    """The files the round's reviewers judge: the planned paths without the
+    files of other contracts, narrowed to the round's files."""
+    left_out = set(current_round.plan["exclude"])
+    inside = (
+        None if current_round.only is None else assignment.within(current_round.only)
+    )
+    return {
+        f
+        for f in Scope(project, current_round.plan["paths"]).files
+        if f not in left_out and (inside is None or inside(f))
+    }
 
 
 def _scope_for_reviewers(project: Project, current_round, files: list[str]) -> dict:

@@ -83,10 +83,10 @@ stop gate only warns when an agent ends its turn while the work is not reviewed 
 blocks it. `[verifier]` sets the `model` (default `"inherit"`) and `max_runs` (default 5, at
 least 1) of the verifier that tries to refute blockers. `check = "references"` checks that
 links, anchors, images and citation keys exist, with `code_paths = true` (default false) also
-paths written in backticks. The verifier and the references check are still in development:
-until they ship, their fields are validated, stored and shown but have no effect, and a
-references criterion stays pending with that reason. The [stop gate](#stop-gate) warns and
-blocks.
+paths written in backticks. The references check is still in development: until it ships, its
+fields are validated, stored and shown but have no effect, and a references criterion stays
+pending with that reason. The [stop gate](#stop-gate) warns and blocks, and the verifier
+challenges blockers (see below).
 
 The reviewers also report findings outside the contract. Each one is tied to an address that
 survives moved lines: the class and function around the line in Python, the heading path and
@@ -94,6 +94,20 @@ paragraph number in Markdown, the symbol name in other languages, else the file.
 correctness, security or factual finding with a concrete scenario can be a blocker; everything
 else is at most a note. A finding counts when both reviewers report it at the same address in
 the same category. A blocker only one of them sees is shown as unconfirmed.
+
+Before a confirmed blocker from a judgment criterion or outside the contract holds up "done", a
+verifier tries to refute it: one short run per blocker in a fresh context, with read tools only
+and nothing but that blocker, its place, the reviewers' evidence and the results of the
+contract's approved commands from this round (the verifier runs no command itself). Its verdict
+is verified (the blocker is marked), refuted or inconclusive (the blocker stays). A refutation
+counts only with concrete counter-evidence the core checks: a quote from a file in scope that
+handles the case, or a passing approved command with a line of its output; otherwise it is
+recorded as inconclusive. A refuted blocker becomes a note with the verifier's reason, and you
+can reopen it ("the verifier is wrong"); later rounds then do not verify it again while its
+place is unchanged. Command and pattern criteria are never verified. At most `max_runs`
+blockers per round are verified (default 5), most severe first; the rest stay blockers and the
+report names them. A blocker a later round sees again is verified again. Where the host has no
+sub-agents, the session verifies itself and the report says it was not independent.
 
 After each review you decide the findings: fix, reject or accept the risk (the last two with a
 one-line reason and a condition under which the finding counts again). These decisions hold in

@@ -1,0 +1,7 @@
+{
+  "verdict": "refuted",
+  "reason": "The approved test command covers the empty list and passes.",
+  "counter_evidence": [
+    {"kind": "command", "criterion": "CODE-1", "output": "test_average_of_empty_list PASSED"}
+  ]
+}

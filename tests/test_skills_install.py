@@ -114,6 +114,7 @@ def test_installed_skills_run_the_core_without_the_plugin(project, installed):
     assert summary["found"] is True
     assert str(project.script) in summary["context"]
     assert (installed / "judicata-review" / "core" / "agents" / "reviewer.md").is_file()
+    assert (installed / "judicata-review" / "core" / "agents" / "verifier.md").is_file()
 
 
 def test_the_installed_core_names_the_prefixed_skills(project, installed):

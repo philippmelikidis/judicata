@@ -27,7 +27,7 @@ all of them alone; Codex relies on the core check.
 import json
 import sys
 
-from . import review, untrusted
+from . import review, untrusted, verifier
 
 MAX_INPUT_BYTES = 8 * 1024 * 1024  # hook input: the answer plus the host's fields
 MAX_LISTED = 200  # problems named in the reason, the rest is counted
@@ -41,6 +41,7 @@ INTRO = (
 # its own schema ("judicata:verifier"), nothing else changes.
 AGENTS = {
     "judicata:reviewer": review.output_schema,
+    "judicata:verifier": verifier.output_schema,
 }
 
 
