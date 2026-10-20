@@ -588,7 +588,7 @@ def test_a_changed_place_gets_a_new_run(project):
     app = project.root / "src" / "app.py"
     app.write_text(
         app.read_text(encoding="utf-8").replace(
-            "def average(values):\n", "def average(values):\n    # the mean\n"
+            "def average(values):\n", "def average(values):  # the mean\n"
         ),
         encoding="utf-8",
     )
@@ -857,7 +857,7 @@ def test_an_earlier_verification_does_not_confirm_a_changed_unconfirmed_blocker(
     shapes = project.root / "src" / "shapes.py"
     shapes.write_text(
         shapes.read_text(encoding="utf-8").replace(
-            "    return a / b", "    # plain division\n    return a / b"
+            "    return a / b", "    return a / b  # plain division"
         ),
         encoding="utf-8",
     )
