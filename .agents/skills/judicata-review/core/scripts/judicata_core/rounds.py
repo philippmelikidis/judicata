@@ -649,12 +649,22 @@ def close(project: Project, round_id: str, unattended: bool = False) -> dict:
         # a focused round answers for its focus only; a full one for everything
         and (current_round.focus is None or states.in_view(current_round, item.info))
     ]
-    done = not blockers and not blocking and not required_pending and not waits
+    # decisions earlier unattended rounds left open count here too (waiting.py)
+    earlier = waiting.carried(
+        all_rounds, after, current_round, assessed["results"], waits
+    )
+    done = (
+        not blockers
+        and not blocking
+        and not required_pending
+        and not waits
+        and not earlier
+    )
     unmet = view["unmet"]
     unmet_hash = _unmet_hash(contract_name, unmet) if unmet else None
     confirmation = None
     focused = current_round.focus is not None
-    open_blockers = len(blockers) + len(blocking) + len(waits)
+    open_blockers = len(blockers) + len(blocking) + len(waits) + len(earlier)
     if focused:  # a part of the contract is never "done" for all of it
         outcome = "focus_clear" if done and not unmet else "focus_open"
         rule = stop.not_counted(current_round)
@@ -668,7 +678,7 @@ def close(project: Project, round_id: str, unattended: bool = False) -> dict:
         outcome, rule = judged["outcome"], judged["stop"]
         if outcome == "done" and unmet:
             outcome = DONE_UNMET
-        elif outcome == "continue" and waits:  # the user decides, later
+        elif outcome == "continue" and (waits or earlier):  # the user decides, later
             outcome = stop.WAITING
         elif outcome == "continue" and done:  # only the unmet ones are left
             outcome = REQUIRED_UNMET
@@ -752,7 +762,8 @@ def close(project: Project, round_id: str, unattended: bool = False) -> dict:
         "unattended": mode,
         "waiting_for_decision": [
             waiting.shown(current_round, record, after) for record in waits
-        ],
+        ]
+        + earlier,
     }
 
 

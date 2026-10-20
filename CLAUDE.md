@@ -317,10 +317,13 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   focused = `focus_open`. Output `unattended` and `waiting_for_decision` (`shown()`: round, kind, question,
   decide_with, texts via untrusted). `pending()` (status, session, gate) = per (kind, id) the latest closed round
   that stored it, while it still waits: a finding open, unsettled, not refuted and last recorded by that round (or
-  represented and undecided there); a criterion without a non-lapsed `verdict_decided` in that round, no later round
-  with a result of the same hash and still in the contract with that hash. `review decide` takes a closed round only
-  for such a criterion (`waiting_in`), otherwise `round_closed` as before; `finding decide` on a closed round already
-  worked. `verify plan` has `unattended` and `ask_more` false when unattended. Session context: a rule to ask them
+  represented, still in the register, undecided there and no later covering round); a criterion without a
+  non-lapsed `verdict_decided` in that round, no later covering round (`covers`: whole contract or same `stop.key`)
+  with a result of the same hash and still in the contract with that hash. `carried()`: what earlier rounds left
+  waiting and the closing round does not settle counts in its `open_blockers` and `waiting_for_decision` too.
+  `review decide` takes a closed round only for such a criterion (`criterion_state`; an older round that a later
+  waiting round replaced = `stale_round`), otherwise `round_closed` as before; `finding decide` on a closed round
+  already worked. `verify plan` has `unattended` and `ask_more` false when unattended. Session context: a rule to ask them
   first, and the section "Waiting for your decision" (command first, then question and subject) before the
   contracts; the gate adds them to the line of (a).
 - `untrusted.py` (#34): text from the repo (ledger, contract) is never trusted; it is never blocked but detected,

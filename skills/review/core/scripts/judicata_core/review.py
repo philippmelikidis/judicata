@@ -391,13 +391,21 @@ def decide(
     events = ledger.read(project)
     all_rounds = rounds.replay(events)
     current_round = all_rounds.get(round_id)
-    closed = current_round is not None and current_round.closed is not None
-    if not closed or not waiting.waiting_in(
-        all_rounds,
-        current_round,
-        criterion_id,
-        _contract_now(project, current_round.contract),
-    ):
+    state = None
+    if current_round is not None and current_round.closed is not None:
+        state = waiting.criterion_state(
+            all_rounds,
+            current_round,
+            criterion_id,
+            _contract_now(project, current_round.contract),
+        )
+    if state not in (None, "waits"):
+        raise JudicataError(
+            "stale_round",
+            "a later round left this criterion waiting too, decide it there",
+            {"round": round_id, "criterion": criterion_id, "latest_round": state},
+        )
+    if state is None:
         current_round = rounds.open_round(project, round_id, all_rounds)
     _planned(current_round)
     reason = reason.strip()

@@ -22,9 +22,15 @@ round_closed stores it in `waiting`:
       decide on that round
 
 pending() lists what still waits, from the ledger only: per (kind, id) the
-latest closed round that recorded it, while the user has not decided it and no
-later round recorded the finding or a result of the criterion (with the same
-hash, in the contract as it is now).
+latest closed round that stored it (review decide on an older one is
+stale_round), while the user has not decided it and nothing settled it: for a
+criterion no later round over the same files (covers: the whole contract or
+the same scope) has a result with the same hash, and the contract still has
+it; a finding is not recorded by a later round, and an unconfirmed one is
+still open and unsettled, a represented one still decided (not closed by a
+contract change) with no later round over its files. carried(): what earlier
+rounds left waiting and the round being closed does not settle counts as its
+open blockers too, so no later round is done while a decision waits.
 """
 
 import os
@@ -173,16 +179,21 @@ def _criterion(current_round, record: dict) -> dict:
 def _finding(current_round, record: dict, found: dict) -> dict:
     fingerprint = record.get("fingerprint")
     item = found.get((current_round.contract, fingerprint))
-    public = untrusted.shown(item.public()) if item is not None else {}
     reason, verifier = record.get("reason"), record.get("verifier")
+    public = {}
+    if item is not None:
+        public = item.public()
+        if reason == "represented":  # checked and cleaned like the finding
+            previous = states.presentation(item, current_round.id)[1]
+            public["previous_decision"] = states.public_decision(previous)
+            public["warnings"] = untrusted.finding(public, item.info_event)
+        public = untrusted.shown(public)
     if reason == "represented":
-        previous = states.presentation(item, current_round.id)[1] if item else None
         question = (
             "This finding was decided earlier, but its place changed since. Keep "
             "the decision, fix, reject or accept the risk?"
         )
     else:
-        previous = None
         question = (
             "Is this blocker real? Only one reviewer saw it"
             + VERIFIER_TEXT.get(verifier, "")
@@ -205,7 +216,7 @@ def _finding(current_round, record: dict, found: dict) -> dict:
         },
         "reason": reason,
         "verifier": verifier,
-        "previous_decision": states.public_decision(previous),
+        "previous_decision": public.get("previous_decision"),
         "question": question,
         "decide_with": "finding decide",
         "warnings": public.get("warnings", []),
@@ -217,30 +228,54 @@ def pending(all_rounds: dict, found: dict, name: str, current=None) -> list[dict
 
     current: the contract as it is now (None: unknown); a criterion it no
     longer has with the same hash waits no more."""
+    entries = []
+    for found_round, record in latest(all_rounds, name).values():
+        if record.get("kind") == CRITERION:
+            still = criterion_waits(all_rounds, found_round, record, current)
+        else:
+            still = _finding_waits(all_rounds, found_round, record, found)
+        if still:
+            entries.append(shown(found_round, record, found))
+    return entries
+
+
+def latest(all_rounds: dict, name: str) -> dict[tuple, tuple]:
+    """(kind, criterion or fingerprint) -> (the latest closed round that
+    stored it, its record), in closing order."""
     closed = sorted(
         (r for r in all_rounds.values() if r.contract == name and r.closed),
         key=lambda r: r.closed_seq,
     )
-    latest: dict[tuple, tuple] = {}
+    found: dict[tuple, tuple] = {}
     for found_round in closed:
         for record in found_round.closed.get("waiting") or []:
-            if not isinstance(record, dict):
-                continue
-            key = (
-                record.get("kind"),
-                record.get("criterion") or record.get("fingerprint"),
-            )
-            latest.pop(key, None)  # the order of the dict: latest round last
-            latest[key] = (found_round, record)
-    entries = []
-    for found_round, record in sorted(latest.values(), key=lambda x: x[0].closed_seq):
-        if record.get("kind") == CRITERION:
-            still = criterion_waits(all_rounds, found_round, record, current)
-        else:
-            still = _finding_waits(found_round, record, found)
-        if still:
-            entries.append(shown(found_round, record, found))
-    return entries
+            if isinstance(record, dict):
+                key = _key(record)
+                found.pop(key, None)  # the order of the dict: latest round last
+                found[key] = (found_round, record)
+    return found
+
+
+def _key(record: dict) -> tuple:
+    return (record.get("kind"), record.get("criterion") or record.get("fingerprint"))
+
+
+def covers(later, earlier) -> bool:
+    """Whether a later round looked at everything an earlier one did: the
+    whole contract, or the same scope (stop.key)."""
+    return later.only is None or stop.key(later) == stop.key(earlier)
+
+
+def _after(all_rounds: dict, found_round) -> list:
+    """The closed rounds of the contract after this one that cover it."""
+    return [
+        other
+        for other in all_rounds.values()
+        if other.contract == found_round.contract
+        and other.closed is not None
+        and other.closed_seq > found_round.closed_seq
+        and covers(other, found_round)
+    ]
 
 
 def criterion_waits(all_rounds: dict, found_round, record: dict, current) -> bool:
@@ -257,37 +292,87 @@ def criterion_waits(all_rounds: dict, found_round, record: dict, current) -> boo
         now = current.criterion(criterion_id)
         if now is None or now.hash != digest:
             return False
-    for other in all_rounds.values():
-        if other.contract != found_round.contract or other.closed_seq <= (
-            found_round.closed_seq
-        ):
-            continue
-        result = other.results.get(criterion_id)
-        if result is not None and result.get("criterion_hash") == digest:
-            return False  # a later round settled it
-    return True
-
-
-def waiting_in(all_rounds: dict, found_round, criterion_id: str, current) -> bool:
-    """Whether a closed round left this criterion waiting and it still waits."""
-    return any(
-        isinstance(record, dict)
-        and record.get("kind") == CRITERION
-        and record.get("criterion") == criterion_id
-        and criterion_waits(all_rounds, found_round, record, current)
-        for record in (found_round.closed or {}).get("waiting") or []
+    return not any(  # a later round over the same files settled it
+        _settles(other.results, criterion_id, digest)
+        for other in _after(all_rounds, found_round)
     )
 
 
-def _finding_waits(found_round, record: dict, found: dict) -> bool:
+def _settles(results: dict, criterion_id: str, digest: str) -> bool:
+    result = results.get(criterion_id)
+    return result is not None and result.get("criterion_hash") == digest
+
+
+def criterion_state(all_rounds: dict, found_round, criterion_id: str, current):
+    """For review decide on a closed round: "waits" (it left this criterion
+    waiting and it still waits), the id of the later round that waits for it
+    now, or None."""
+    key = (CRITERION, criterion_id)
+    record = next(
+        (
+            r
+            for r in (found_round.closed or {}).get("waiting") or []
+            if isinstance(r, dict) and _key(r) == key
+        ),
+        None,
+    )
+    if record is None:
+        return None
+    holder, _ = latest(all_rounds, found_round.contract)[key]
+    if holder.id != found_round.id:
+        return holder.id
+    return (
+        "waits" if criterion_waits(all_rounds, found_round, record, current) else None
+    )
+
+
+def _finding_waits(all_rounds: dict, found_round, record: dict, found: dict) -> bool:
     item = found.get((found_round.contract, record.get("fingerprint")))
     if item is None or not item.rounds or item.rounds[-1] != found_round.id:
         return False  # gone, or a later round recorded it again
     if record.get("reason") == "represented":
         kind, _ = states.presentation(item, found_round.id)
-        return kind == "represented" and not states.decided_in(item, found_round.id)
+        return (
+            kind == "represented"
+            and item.state in states.REGISTER  # not closed by a contract change
+            and not states.decided_in(item, found_round.id)
+            and not _after(all_rounds, found_round)  # looked again, not seen
+        )
     return (
         item.state == "open"
         and not item.settled
         and not verification.refuted({"verification": item.verification})
     )
+
+
+def carried(
+    all_rounds: dict, found: dict, current_round, results: dict, own: list[dict]
+) -> list[dict]:
+    """Decisions earlier rounds left waiting that the round being closed does
+    not settle: they count as its open blockers too (never done while one
+    waits). found: the states as if the round closed (rounds.simulate)."""
+    mine = {_key(r) for r in own}
+    criteria = {c["id"] for c in current_round.criteria}
+    entries = []
+    for earlier, record in latest(all_rounds, current_round.contract).values():
+        if _key(record) in mine:
+            continue
+        if record.get("kind") == CRITERION:
+            if not criterion_waits(all_rounds, earlier, record, None):
+                continue
+            if record.get("criterion") not in criteria:  # outside the focus
+                continue
+            if covers(current_round, earlier) and _settles(
+                results, record.get("criterion"), record.get("criterion_hash")
+            ):
+                continue
+        else:
+            if not _finding_waits(all_rounds, earlier, record, found):
+                continue
+            item = found[(current_round.contract, record.get("fingerprint"))]
+            if not states.in_view(current_round, item.info):
+                continue
+            if record.get("reason") == "represented" and covers(current_round, earlier):
+                continue  # this round looked again and did not see it
+        entries.append(shown(earlier, record, found))
+    return entries
