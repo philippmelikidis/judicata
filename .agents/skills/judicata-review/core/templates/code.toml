@@ -1,0 +1,46 @@
+# judicata template: a proposal for the contract interview, not a contract.
+# Values listed in "fill" are examples; the interview replaces them from the project.
+name = "code"
+description = "Software: tests pass, the linter is clean, no known correctness bugs."
+priority = 2
+suggest_for = [
+  "*.py", "*.pyi", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.ts", "*.tsx", "*.go", "*.rs",
+  "*.java", "*.kt", "*.kts", "*.scala", "*.c", "*.h", "*.cc", "*.cpp", "*.hpp", "*.cs",
+  "*.rb", "*.php", "*.swift", "*.m", "*.sh", "*.bash", "*.zsh", "*.ps1", "*.sql",
+  "*.lua", "*.dart", "*.ex", "*.exs", "*.erl", "*.hs", "*.clj", "*.r", "*.R", "*.jl",
+  "*.vue", "*.svelte", "Makefile", "Dockerfile", "*.toml", "*.yaml", "*.yml", "*.json",
+]
+
+[[criteria]]
+id = "CODE-1"
+text = "Tests pass"
+check = "command"
+required = true
+command = "pytest -q"
+timeout = 600
+fill = ["command"]
+hint = "The command that runs the test suite in this project (look at pyproject.toml, package.json, Makefile or the CI config). Drop the criterion if the project has no tests."
+
+[[criteria]]
+id = "CODE-2"
+text = "Linter is clean"
+check = "command"
+required = true
+command = "ruff check ."
+timeout = 300
+fill = ["command"]
+hint = "The lint command of this project, as the CI runs it. Drop the criterion if the project has no linter."
+
+[[criteria]]
+id = "CODE-3"
+text = "No known correctness bugs in the scope: no input or state that leads to a wrong result or a crash"
+check = "judgment"
+required = true
+
+[[criteria]]
+id = "CODE-4"
+text = "The acceptance criteria of the ticket are met"
+check = "judgment"
+required = false
+fill = ["text"]
+hint = "If the ticket or task is known, name it in the text (for example: The acceptance criteria of issue #12 are met). Drop the criterion if there is no ticket."

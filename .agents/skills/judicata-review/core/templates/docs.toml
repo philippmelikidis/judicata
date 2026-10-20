@@ -1,0 +1,37 @@
+# judicata template: a proposal for the contract interview, not a contract.
+name = "docs"
+description = "Documentation: every step works as written, commands and paths exist, the audience is clear."
+priority = 1
+suggest_for = [
+  "README*", "readme*", "CONTRIBUTING*", "INSTALL*", "CHANGELOG*", "docs/*", "doc/*",
+  "*/docs/*", "*/doc/*", "*.rst", "*.adoc",
+]
+
+[[criteria]]
+id = "DOCS-1"
+text = "Every step can be followed as written, in the given order, without missing steps"
+check = "judgment"
+required = true
+
+[[criteria]]
+id = "DOCS-2"
+text = "Every command, file and path the text mentions exists in the project and is spelled correctly"
+check = "judgment"
+required = true
+
+[[criteria]]
+id = "DOCS-3"
+text = "The audience is clear and the text assumes only what that audience knows"
+check = "judgment"
+required = true
+fill = ["text"]
+hint = "Name the audience if it is known (for example: new contributors who know Python but not this project)."
+
+[[criteria]]
+id = "DOCS-4"
+text = "Every relative link, anchor, image, citation key and path in backticks points to something that exists"
+check = "references"
+required = true
+code_paths = true
+fill = ["code_paths"]
+hint = "Keep code_paths = true if paths in backticks are project paths relative to the root; set it to false if the docs put other things in backticks that look like paths (paths on the reader's machine, URL paths) and say so. Drop the criterion only if the artifact has no Markdown or LaTeX files."

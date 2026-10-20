@@ -1,8 +1,8 @@
 # judicata reference
 
 The [README](../README.md) gets you started. This page has the details: the contract format,
-the three checks, findings and decisions, the stop rule, Codex, other agents, security and
-development.
+the three checks, findings and decisions, the stop rule, the stop gate, Codex, other agents,
+security and development.
 
 ## How a review works
 
@@ -72,7 +72,10 @@ reviewers with a fresh context and read-only tools, by default on the model of y
 they agree, the result stands. If they disagree, you decide once, and your decision holds in
 later rounds as long as the criterion and the files it was about are unchanged. Set the number
 and models in the contract (`[reviewers]`) or just say so for one review ("only one reviewer",
-"use Opus and Sonnet"); that does not change the contract.
+"use Opus and Sonnet"); that does not change the contract. Every place a reviewer cites is
+checked: the quote must read exactly at the cited file and line (only whitespace and line
+breaks may differ). An answer with an invented or misplaced quote goes back to the reviewer
+once with the reason, a second invalid answer drops that reviewer for the round.
 
 Contract format 0.2 adds three optional fields; contracts written by judicata 0.1 keep working
 unchanged and get the defaults. `[stop] gate` is `"warn"` (default) or `"block"`: whether the
@@ -80,8 +83,8 @@ stop gate only warns when an agent ends its turn while the work is not reviewed 
 blocks it. `[verifier]` sets the `model` (default `"inherit"`) and `max_runs` (default 5, at
 least 1) of the verifier that tries to refute blockers. `check = "references"` checks that
 links, anchors, images and citation keys exist, with `code_paths = true` (default false) also
-paths written in backticks (see below). The stop gate and the verifier are still in
-development: until they ship, their fields are validated, stored and shown but have no effect.
+paths written in backticks (see below). The [stop gate](#stop-gate) warns and blocks, and the
+verifier challenges blockers.
 
 A references criterion (`check = "references"`) needs no model and gives the same result every
 time, in the plugin and in a plain skills install. It reads the Markdown files in scope (`.md`,
@@ -117,7 +120,29 @@ survives moved lines: the class and function around the line in Python, the head
 paragraph number in Markdown, the symbol name in other languages, else the file. Only a
 correctness, security or factual finding with a concrete scenario can be a blocker; everything
 else is at most a note. A finding counts when both reviewers report it at the same address in
-the same category. A blocker only one of them sees is shown as unconfirmed.
+the same category. A blocker only one of them sees is unconfirmed: the verifier decides it
+first (verified, it counts like a confirmed blocker; refuted, it becomes a note), and only if
+the verifier cannot decide are you asked.
+
+Before a blocker from a judgment criterion or outside the contract holds up "done", a
+verifier tries to refute it: one short run per blocker in a fresh context, with read tools only
+and nothing but that blocker, its place, the reviewers' evidence and the results of the
+contract's approved commands from this round (the verifier runs no command itself). Its verdict
+is verified (the blocker is marked), refuted or inconclusive (the blocker stays). A refutation
+counts only with concrete counter-evidence the core checks: a quote from a file in scope that
+handles the case, or a passing approved command with a line of its output; otherwise it is
+recorded as inconclusive. A refuted blocker becomes a note with the verifier's reason, and you
+can reopen it ("the verifier is wrong"); later rounds then do not verify it again while its
+place is unchanged. Command and pattern criteria are never verified. A verdict is stored per
+finding and place: a later round that sees the blocker at the same place (and, for a criterion,
+with the same criterion text) reuses it without a new run; a refutation only while its
+counter-evidence still holds. A changed place or criterion gets a new run. At most `max_runs`
+new runs per round (default 5), most severe first; the rest stay blockers. In an interactive
+run the report says "N of M blockers verified" and asks once whether to verify the rest
+(default no). In block mode (`[stop] gate = "block"` or the environment variable
+`JUDICATA_GATE=block` for unattended runs, which overrides the contract) it never asks and
+lists the unverified blockers. Where the host has no sub-agents, the session verifies itself
+and the report says it was not independent.
 
 After each review you decide the findings: fix, reject or accept the risk (the last two with a
 one-line reason and a condition under which the finding counts again). These decisions hold in
@@ -164,6 +189,68 @@ never refuses a review because of it. `/judicata:status` shows every contract at
 result, the open blockers and should-fix items, the accepted risks and rejected findings with
 their reasons, the round within the current pass and the open blockers per round.
 
+## Stop gate
+
+At the end of every agent turn the plugin's Stop hook asks the core whether the
+work under a contract is reviewed and done. It is not when
+
+- the latest review this session ran for a contract did not reach a final result (done, done
+  with accepted risks, finished despite unmet required criteria, not converged, round limit):
+  it ended in "continue", "required criteria not met" or a focused round, or it was not
+  closed. The gate names the open blockers. A later final review of the contract, also from
+  another session, releases it.
+- files in a contract's scope were written or removed during this session after its last
+  finished review looked at them, their content differs from what it saw, and no review of
+  them ran since. The gate names the files this session wrote. Files written back unchanged
+  do not count, and changes made before the session started alone do not either.
+
+What happens then depends on the gate mode:
+
+- **warn** (the default, `[stop] gate = "warn"`): one line for you, and the agent is left
+  alone. Good for interactive work.
+- **block** (`[stop] gate = "block"` in the contract, for everyone working on the project):
+  the agent may not end its turn. The hook answers with `decision: "block"` and a reason that
+  names the open blockers or the changed files and tells the agent what to do: review again,
+  or tell you plainly that the work is not done and end its answer with the line
+  `judicata: not done`. You see the same in one line. An answer whose last line is that
+  line is an honest report: the turn ends, you get the one-line warning, and it does not
+  count as a block. The gate lets go as soon as the latest review reached a final result,
+  and after at most three blocks per session (counted per project): the next stop only warns and appends a
+  `gate_released` event (session id, number of blocks, contracts) to the ledger, so the gate
+  can never trap an agent in a loop. The gate reads only that line, not what the answer
+  says otherwise. The count lives in your state directory next to the approvals;
+  where it cannot be kept (no session id, a state directory that cannot be written), the
+  gate only warns and says why, so the limit always holds.
+
+`JUDICATA_GATE=block` or `JUDICATA_GATE=warn` in the environment of the agent overrides the
+mode of every contract for that run without changing a contract: block your night runs
+(`JUDICATA_GATE=block claude -p ...`) while interactive sessions only warn, or warn where a
+contract says block. Other values are ignored. With several contracts, only those in block
+mode block; the others are named in your line. Checked with Claude Code 2.1.303
+(`claude -p --plugin-dir`) and Codex 0.163 (`codex exec` with the hook): one block, then the
+agent reported "not done" honestly and the turn ended; without the honest line, three blocks
+and the release.
+
+Sessions that touched no contract, projects without `.judicata/` and any error give no output.
+The hook finds the session's reviews in the session transcript (the round ids in its
+judicata commands and answers) and the session start in its first timestamp. Without a transcript
+(`claude -p --no-session-persistence`) it uses the start the SessionStart hook recorded in your
+state directory (next to the approvals) and counts every review started since then, so
+parallel sessions in the same project see each other's reviews there.
+
+Per host:
+
+| Host | Warns | Blocks | Otherwise |
+| --- | --- | --- | --- |
+| Claude Code plugin | yes | with `gate = "block"` or `JUDICATA_GATE=block` | |
+| Codex plugin | yes, once you trusted the hooks in `/hooks` | the same, once you trusted the hooks | |
+| Plain skills (OpenCode, Cursor, Gemini CLI, ...) | no | no | the skills carry the rule: check the status before saying done and name what is open |
+
+Plain skills cannot ship hooks. Every judicata skill tells the agent to run the status before
+it says that work under a contract is done, and to say plainly that it is not done otherwise.
+That holds once a judicata skill ran in the conversation, and it is an instruction, not a
+check: ask for the status yourself before you trust a done.
+
 ## Codex
 
 judicata runs in the Codex CLI too (tested with 0.163), from the same repository:
@@ -173,12 +260,13 @@ codex plugin marketplace add philippmelikidis/judicata
 codex plugin add judicata@judicata
 ```
 
-Then trust its hook once: start `codex`, open `/hooks` and trust the SessionStart hook of
-judicata. Codex runs the hooks of a plugin only after you trusted them and skips them
+Then trust its hooks once: start `codex`, open `/hooks` and trust the SessionStart and Stop
+hooks of judicata. Codex runs the hooks of a plugin only after you trusted them and skips them
 silently otherwise. Without that step a new session does not get the summary of the ledger,
-so it does not know your decisions until a judicata skill runs; ask "where do we stand?"
-(the status skill) and it tells you when the summary is missing. `codex exec
---dangerously-bypass-hook-trust` runs the hooks for that one call without trusting them.
+so it does not know your decisions until a judicata skill runs, and the stop gate does not
+warn; ask "where do we stand?" (the status skill) and it tells you when the summary is
+missing. `codex exec --dangerously-bypass-hook-trust` runs the hooks for that one call without
+trusting them.
 
 Ask in plain words as in Claude Code ("review this again", "is it done?") or name a skill
 (`judicata:review`, `judicata:contract`, `judicata:status`). What differs in Codex:
@@ -190,6 +278,17 @@ Ask in plain words as in Claude Code ("review this again", "is it done?") or nam
   files with shell commands in your session's sandbox and are told to change nothing, and
   they see the project's `AGENTS.md`. If sub-agents are switched off, the review runs with
   one reviewer, the session itself, and the report says that it was not independent.
+- **Schema check of reviewer answers.** In Claude Code a SubagentStop hook sends a reviewer
+  whose answer is not valid JSON for the output schema back once, with the exact problems.
+  Codex runs SubagentStop hooks too, but every sub-agent there has the same type
+  (`default`), so judicata cannot tell its reviewers from your other sub-agents and leaves
+  all of them alone. A malformed answer then reaches the core, which rejects it, and the
+  review skill asks the reviewer once more, as without the hook.
+- **Untrusted repositories:** start Codex with `codex --sandbox read-only`. The reviewers
+  run in your session's sandbox, so they are then read-only by the sandbox too, not only by
+  instruction. judicata's own commands that write `.judicata/` (the ledger) or store an
+  approval cannot write in that sandbox; Codex asks you to allow them, and they write nothing
+  but `.judicata/` and the approval store.
 - **Questions** come as a numbered list in the chat; answer with the number or in words.
 - **Approvals** of a contract's commands are stored in `~/.local/state/judicata` (or
   `$XDG_STATE_HOME/judicata`), not in Claude Code's plugin data directory, so you approve
@@ -208,17 +307,26 @@ npx skills@latest add philippmelikidis/judicata --skill '*' -a <agent>
 
 `-a` names the agent (for example `opencode` or `cursor`; leave it out to choose), `-g`
 installs for all your projects instead of the current one. The installer copies
-`skills/review`, `skills/contract` and `skills/status` from this repository (OpenCode, for
-example, reads them from `.agents/skills/`). The review skill carries a copy of the core in
-`core/` (the command line, the templates and the reviewer instructions), and the other two
-skills use it, so install all three. Update with `npx skills@latest update`. In Claude Code
-and Codex use the plugin instead: the plugin gets everything below, and a second install
-would give you every skill twice.
+`judicata-review`, `judicata-contract` and `judicata-status` from `.agents/skills/` in this
+repository (OpenCode, for example, reads them from `.agents/skills/` in your project). They
+are generated from the plugin's skills and differ only in their names and in how they refer
+to each other; the plugin's own skills are marked internal and the installer skips them.
+`judicata-review` carries a copy of the core in `core/` (the command line, the templates and
+the reviewer instructions), and the other two skills use it, so install all three. Update
+with `npx skills@latest update`. In Claude Code and Codex use the plugin instead: the plugin
+gets everything below, and a second install would give you every skill twice under two
+names.
 
-Ask in plain words as in Claude Code, or call the skills the way your agent does (their
-names are plain `review`, `contract` and `status`, without the `judicata:` prefix; another
-skill or command with the same name in your agent can shadow them). What a plain install
-does not have:
+If your installer does not know the internal mark and offers six skills, pick the three
+prefixed ones:
+
+```bash
+npx skills@latest add philippmelikidis/judicata --skill judicata-review --skill judicata-contract --skill judicata-status
+```
+
+Ask in plain words as in Claude Code, or call the skills the way your agent does
+(`judicata-review`, `judicata-contract`, `judicata-status`; the prefix keeps them apart from
+your agent's own commands and other skills). What a plain install does not have:
 
 - **No session hook.** Plain skills cannot ship hooks, so a new session does not start with
   the summary of the ledger, and a chat that is not running a judicata skill does not know
@@ -231,6 +339,13 @@ does not have:
   instruction only, as in Codex. Model names of Claude (opus, sonnet) become your session's
   model, and the report says so. If your agent has no sub-agents, the review runs with one
   reviewer, the session itself, and the report says that it was not independent.
+- **No schema hook.** A reviewer answer that does not match the output schema reaches the
+  core, which rejects it, and the review skill asks the reviewer once more (in Claude Code a
+  hook sends it back before that).
+- **No stop gate.** Without hooks nothing warns or blocks at the end of a turn while a
+  contract has open blockers or unreviewed changes. The skills carry the rule instead: check
+  the status before saying done and name what is open. Ask for the status yourself before you
+  trust a done.
 - **No question buttons.** Without a question tool, questions come as a numbered list in the
   chat, as in Codex.
 - **Approvals** of a contract's commands are stored in `~/.local/state/judicata` (or
@@ -285,9 +400,15 @@ uv run --with pytest==9.1.1 pytest
 
 The tests drive the core command line. `skills/review/core/` is a copy of `scripts/`,
 `templates/`, `agents/reviewer.md` and `LICENSE` for installs as plain skills (an install
-copies only the skill folders). Never edit it by hand: after changing the source run
-`python3 tools/bundle_core.py`; the tests and CI fail while the copy differs
-(`python3 tools/bundle_core.py --check` lists the differences). The behavior of the plugin in Claude Code (skills,
+copies only the skill folders), and `.agents/skills/judicata-*/` holds the skills of
+`skills/` under their prefixed names, each with the same files (the review copy with the
+core). Never edit the copies by hand: after changing the source run
+`python3 tools/bundle_core.py`; the tests and CI fail while a copy differs
+(`python3 tools/bundle_core.py --check` lists the differences). Every plugin skill keeps
+`metadata:` / `internal: true` in its frontmatter (hides it from `npx skills`), and the
+repository root has no `skills-lock.json` (the installer would take the copies as installed);
+the tool checks both. When Codex runs inside this repository it also lists the copies as
+repository skills; users do not see them. The behavior of the plugin in Claude Code (skills,
 reviewer agent, hook) is checked by five acceptance evals in `evals/`, run with
 `claude plugin eval` against the plugin and, as a baseline, against Claude without it:
 

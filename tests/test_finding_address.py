@@ -73,14 +73,6 @@ def test_python_module_level_line_is_addressed_by_the_file(project):
     assert entry["label"] == "src/shapes.py"
 
 
-def test_the_line_is_taken_from_the_quote_when_the_reviewer_is_a_little_off(project):
-    setup(project)
-
-    entry = one(project, line=18, quote="return a / b")  # the quote is on line 21
-
-    assert entry["address"]["symbol"] == "ratio"
-
-
 def shapes(project):
     return project.root / "src" / "shapes.py"
 
@@ -296,21 +288,25 @@ def test_trailing_spaces_inside_a_function_change_its_hash(project):
     assert after["section_hash"] != before["section_hash"]
 
 
-def test_a_multi_line_quote_anchors_where_the_whole_quote_is(project):
+def test_a_multi_line_quote_is_placed_at_the_line_it_starts_at(project):
     setup(project)
     write(
         project,
         "src/zero.py",
         "def f():\n    return 0\n\n\ndef g():\n    return 0\n    # detail\n",
     )
+    place = {
+        "file": "src/zero.py",
+        "quote": "return 0\n    # detail",
+        "category": "clarity",
+        "severity": "note",
+    }
 
-    entry = one(
-        project,
-        file="src/zero.py",
-        line=2,
-        quote="return 0\n    # detail",
-        category="clarity",
-        severity="note",
-    )
+    entry = one(project, **place, line=6)
+    round_id, runs = project.judged_round("--count", "1")
+    code, payload = project.submit(round_id, runs[0], output(finding(**place, line=2)))
 
     assert entry["address"]["symbol"] == "g"
+    assert code != 0  # line 2 holds the first line only, the whole quote is at 6
+    [problem] = payload["error"]["details"]["problems"]
+    assert "starts at line 6" in problem["problem"]

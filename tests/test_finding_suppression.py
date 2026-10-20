@@ -67,9 +67,9 @@ def edit(project, old: str, new: str, file="src/shapes.py") -> None:
     path.write_text(text.replace(old, new), encoding="utf-8")
 
 
-CHANGE_RATIO = (
+CHANGE_RATIO = (  # changes the place, the quote stays at its line
     "    return a / b\n",
-    "    # b is checked by the callers\n    return a / b\n",
+    "    return a / b  # b is checked by the callers\n",
 )
 CHANGE_AREA = ("self.radius**2", "self.radius ** 2")
 

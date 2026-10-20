@@ -30,12 +30,24 @@ the ledger knows, sorted by name):
                 criterion findings only for criteria the contract file still
                 has unchanged (id and hash), when it can be read
   should_fix    live should-fix findings; notes = the number of live notes
+  refuted       live blockers a verifier refuted (they count as notes), each
+                with its verification (reason, counter-evidence); verify reopen
+                makes one block again
   accepted_risks, rejected   the register with reason and reopen condition
   counts        findings per state
 Writes nothing, also no .judicata/.
 """
 
-from . import contract, ledger, narrow, rounds, states, stop, untrusted
+from . import (
+    contract,
+    ledger,
+    narrow,
+    rounds,
+    states,
+    stop,
+    untrusted,
+    verification,
+)
 from .errors import JudicataError
 from .project import Project
 
@@ -134,6 +146,11 @@ def _contract(
             _brief(i) for i in live if i.info.get("severity") == "should-fix"
         ],
         "notes": sum(1 for i in live if i.info.get("severity") == "note"),
+        "refuted": [
+            _brief(i)
+            for i in live
+            if verification.refuted({"verification": i.verification})
+        ],
         "accepted_risks": [
             stop.risk(untrusted.shown(i.public()))
             for i in items
@@ -243,7 +260,7 @@ def _confirmed(found) -> dict | None:
 
 def _brief(item) -> dict:
     shown = untrusted.shown(item.public())  # flagged text only cleaned
-    return {key: shown.get(key) for key in (*BRIEF, "warnings")}
+    return {key: shown.get(key) for key in (*BRIEF, "verification", "warnings")}
 
 
 def _word(value):

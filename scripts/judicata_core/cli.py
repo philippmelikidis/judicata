@@ -19,12 +19,15 @@ from . import (
     contract,
     decisions,
     findings,
+    gate,
     review,
     rounds,
     session,
     status,
+    subagent,
     templates,
     untrusted,
+    verifier,
     versions,
 )
 from .errors import JudicataError
@@ -227,6 +230,71 @@ def _add_review(groups, common) -> None:
         handler=lambda a, p: review.decide(
             p, a.round, a.criterion, a.passed == "true", a.reason
         )
+    )
+
+
+def _add_verify(groups, common) -> None:
+    group = groups.add_parser(
+        "verify", help="verifiers that try to refute the confirmed blockers of a round"
+    )
+    commands = group.add_subparsers(dest="command", required=True)
+
+    plan = commands.add_parser(
+        "plan",
+        parents=[common],
+        help="fix the verifier runs of a round, one blocker each, most severe first",
+    )
+    plan.add_argument("--round", required=True, help="round id from round start")
+    plan.set_defaults(handler=lambda a, p: verifier.plan(p, a.round))
+
+    more = commands.add_parser(
+        "more",
+        parents=[common],
+        help="on the user's request: one run for each blocker over the limit",
+    )
+    more.add_argument("--round", required=True, help="round id from round start")
+    more.set_defaults(handler=lambda a, p: verifier.more(p, a.round))
+
+    submit = commands.add_parser(
+        "submit",
+        parents=[common],
+        help="take in the JSON verdict of one verifier run (stdin or --file)",
+    )
+    submit.add_argument("--round", required=True, help="round id from round start")
+    submit.add_argument("--run", required=True, help="run id from verify plan")
+    submit.add_argument("--file", help="read the output from this file, not stdin")
+    submit.add_argument(
+        "--self",
+        dest="self_verified",
+        action="store_true",
+        help="the session verified the blocker itself (no sub-agent): not independent",
+    )
+    submit.set_defaults(
+        handler=lambda a, p: verifier.submit(
+            p, a.round, a.run, _read_input(a.file), not a.self_verified
+        )
+    )
+
+    discard = commands.add_parser(
+        "discard", parents=[common], help="give up on a run that produced nothing"
+    )
+    discard.add_argument("--round", required=True, help="round id from round start")
+    discard.add_argument("--run", required=True, help="run id from verify plan")
+    discard.add_argument("--reason", required=True, help="one line, for the report")
+    discard.set_defaults(
+        handler=lambda a, p: verifier.discard(p, a.round, a.run, a.reason)
+    )
+
+    reopen = commands.add_parser(
+        "reopen",
+        parents=[common],
+        help="the user disagrees with a refutation: the finding blocks again",
+    )
+    reopen.add_argument("--round", required=True, help="round of the verdict")
+    reopen.add_argument("--fingerprint", required=True, help="from finding list")
+    reopen.add_argument("--reason", required=True, help="one line, why")
+    reopen.set_defaults(
+        handler=lambda a, p: verifier.reopen(p, a.round, a.fingerprint, a.reason)
     )
 
 
@@ -494,6 +562,7 @@ def _add_session(groups, common) -> None:
 GROUPS = [
     _add_round,
     _add_review,
+    _add_verify,
     _add_finding,
     _add_template,
     _add_contract,
@@ -532,8 +601,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str]) -> int:
-    if argv[:1] == ["hook"]:  # hook output, not the JSON envelope (session.py)
-        return session.main(argv[1:])
+    if argv[:1] == ["hook"]:  # hook output, not the JSON envelope
+        if argv[1:2] == ["stop"]:
+            return gate.main(argv[1:])  # gate.py
+        if argv[1:2] == ["subagent-stop"]:
+            return subagent.main(argv[1:])  # subagent.py
+        return session.main(argv[1:])  # session.py
     try:
         args = build_parser().parse_args(argv)
         payload = args.handler(args, Project(args.project))

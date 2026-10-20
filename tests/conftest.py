@@ -66,6 +66,7 @@ class Project:
 
         stdin: the hook input (dict as JSON, str or bytes); by default the
         SessionStart input of a session started in this project (or in cwd).
+        self.env applies as in run().
         """
         if stdin is None:
             stdin = {
@@ -79,6 +80,11 @@ class Project:
         elif not isinstance(stdin, bytes):
             stdin = json.dumps(stdin).encode("utf-8")
         env = {**os.environ, "JUDICATA_STATE_DIR": str(self.state_dir)}
+        for key, value in self.env.items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = value
         proc = subprocess.run(
             [sys.executable, str(self.script), "hook", event],
             check=False,

@@ -164,7 +164,7 @@ def file_place(relative: str, text: str) -> dict:
     return {
         "address": {"file": relative, "kind": "file"},
         "label": relative,
-        "section_hash": address.section_hash(text.splitlines()),
+        "section_hash": address.section_hash(address.split_lines(text)),
         "file": relative,
         "line": None,
     }

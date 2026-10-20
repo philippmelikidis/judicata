@@ -1,0 +1,7 @@
+{
+  "verdict": "refuted",
+  "reason": "The function checks the length first.",
+  "counter_evidence": [
+    {"kind": "quote", "file": "src/app.py", "line": 6, "quote": "if len(values) == 0:"}
+  ]
+}
