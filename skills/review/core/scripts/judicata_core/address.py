@@ -36,6 +36,19 @@ _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _LIST_OR_QUOTE = re.compile(r"^ {0,3}(?:[-*+]|\d+[.)]|>)(?:[ \t]|$)")
 
 
+def split_lines(text: str) -> list[str]:
+    """The lines of a text, split at line breaks only (\\n, \\r\\n, \\r).
+
+    Unlike str.splitlines, a form feed or a Unicode line separator stays inside
+    its line, so line numbers match an editor, the reviewer's Read tool, Python's
+    ast and the pattern check. A final line break adds no empty line.
+    """
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    return lines
+
+
 def locate(relative: str, text: str, line: int, symbol: str | None) -> dict:
     """{address, label, section_hash} of the place at a 1-based line."""
     return Locator(relative, text).at(line, symbol)
@@ -46,7 +59,7 @@ class Locator:
 
     def __init__(self, relative: str, text: str):
         self.relative, self.text = relative, text
-        self.lines = text.splitlines()
+        self.lines = split_lines(text)
         lower = relative.lower()
         self.python = lower.endswith(PYTHON_SUFFIXES)
         self.markdown = lower.endswith(MARKDOWN_SUFFIXES)

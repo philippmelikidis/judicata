@@ -9,8 +9,9 @@ development.
 Run `/judicata:review`. Without a contract, judicata first runs a short interview: it suggests
 a template that fits the artifact (code, docs or prose), proposes criteria from the template
 and from the artifact (for example the test command it finds in your project), and you drop,
-add or mark criteria required or optional. Reviewers (2, the model of your chat) and the stop
-rule (at most 5 rounds, "not converged" after 2 rounds without progress) are one Enter each.
+add or mark criteria required or optional. Reviewers (2, the model of your chat), the stop
+rule (at most 5 rounds, "not converged" after 2 rounds without progress), the stop gate (warn)
+and the verifier (the model of your chat, at most 5 runs per round) are one Enter each.
 The contract is stored in `.judicata/contracts/<name>.toml`, for example:
 
 ```toml
@@ -25,6 +26,11 @@ models = ["inherit"]
 [stop]
 max_rounds = 5
 stall_rounds = 2
+gate = "warn"
+
+[verifier]
+model = "inherit"
+max_runs = 5
 
 [[criteria]]
 id = "CODE-1"
@@ -66,7 +72,20 @@ reviewers with a fresh context and read-only tools, by default on the model of y
 they agree, the result stands. If they disagree, you decide once, and your decision holds in
 later rounds as long as the criterion and the files it was about are unchanged. Set the number
 and models in the contract (`[reviewers]`) or just say so for one review ("only one reviewer",
-"use Opus and Sonnet"); that does not change the contract.
+"use Opus and Sonnet"); that does not change the contract. Every place a reviewer cites is
+checked: the quote must read exactly at the cited file and line (only whitespace and line
+breaks may differ). An answer with an invented or misplaced quote goes back to the reviewer
+once with the reason, a second invalid answer drops that reviewer for the round.
+
+Contract format 0.2 adds three optional fields; contracts written by judicata 0.1 keep working
+unchanged and get the defaults. `[stop] gate` is `"warn"` (default) or `"block"`: whether the
+stop gate only warns when an agent ends its turn while the work is not reviewed and done, or
+blocks it. `[verifier]` sets the `model` (default `"inherit"`) and `max_runs` (default 5, at
+least 1) of the verifier that tries to refute blockers. `check = "references"` checks that
+links, anchors, images and citation keys exist, with `code_paths = true` (default false) also
+paths written in backticks. The stop gate, the verifier and the references check are still in
+development: until they ship, these fields are validated, stored and shown but have no effect,
+and a references criterion stays pending with that reason.
 
 The reviewers also report findings outside the contract. Each one is tied to an address that
 survives moved lines: the class and function around the line in Python, the heading path and
@@ -170,17 +189,26 @@ npx skills@latest add philippmelikidis/judicata --skill '*' -a <agent>
 
 `-a` names the agent (for example `opencode` or `cursor`; leave it out to choose), `-g`
 installs for all your projects instead of the current one. The installer copies
-`skills/review`, `skills/contract` and `skills/status` from this repository (OpenCode, for
-example, reads them from `.agents/skills/`). The review skill carries a copy of the core in
-`core/` (the command line, the templates and the reviewer instructions), and the other two
-skills use it, so install all three. Update with `npx skills@latest update`. In Claude Code
-and Codex use the plugin instead: the plugin gets everything below, and a second install
-would give you every skill twice.
+`judicata-review`, `judicata-contract` and `judicata-status` from `.agents/skills/` in this
+repository (OpenCode, for example, reads them from `.agents/skills/` in your project). They
+are generated from the plugin's skills and differ only in their names and in how they refer
+to each other; the plugin's own skills are marked internal and the installer skips them.
+`judicata-review` carries a copy of the core in `core/` (the command line, the templates and
+the reviewer instructions), and the other two skills use it, so install all three. Update
+with `npx skills@latest update`. In Claude Code and Codex use the plugin instead: the plugin
+gets everything below, and a second install would give you every skill twice under two
+names.
 
-Ask in plain words as in Claude Code, or call the skills the way your agent does (their
-names are plain `review`, `contract` and `status`, without the `judicata:` prefix; another
-skill or command with the same name in your agent can shadow them). What a plain install
-does not have:
+If your installer does not know the internal mark and offers six skills, pick the three
+prefixed ones:
+
+```bash
+npx skills@latest add philippmelikidis/judicata --skill judicata-review --skill judicata-contract --skill judicata-status
+```
+
+Ask in plain words as in Claude Code, or call the skills the way your agent does
+(`judicata-review`, `judicata-contract`, `judicata-status`; the prefix keeps them apart from
+your agent's own commands and other skills). What a plain install does not have:
 
 - **No session hook.** Plain skills cannot ship hooks, so a new session does not start with
   the summary of the ledger, and a chat that is not running a judicata skill does not know
@@ -250,9 +278,15 @@ uv run --with pytest==9.1.1 pytest
 
 The tests drive the core command line. `skills/review/core/` is a copy of `scripts/`,
 `templates/`, `agents/reviewer.md` and `LICENSE` for installs as plain skills (an install
-copies only the skill folders). Never edit it by hand: after changing the source run
-`python3 tools/bundle_core.py`; the tests and CI fail while the copy differs
-(`python3 tools/bundle_core.py --check` lists the differences). The behavior of the plugin in Claude Code (skills,
+copies only the skill folders), and `.agents/skills/judicata-*/` holds the skills of
+`skills/` under their prefixed names, each with the same files (the review copy with the
+core). Never edit the copies by hand: after changing the source run
+`python3 tools/bundle_core.py`; the tests and CI fail while a copy differs
+(`python3 tools/bundle_core.py --check` lists the differences). Every plugin skill keeps
+`metadata:` / `internal: true` in its frontmatter (hides it from `npx skills`), and the
+repository root has no `skills-lock.json` (the installer would take the copies as installed);
+the tool checks both. When Codex runs inside this repository it also lists the copies as
+repository skills; users do not see them. The behavior of the plugin in Claude Code (skills,
 reviewer agent, hook) is checked by five acceptance evals in `evals/`, run with
 `claude plugin eval` against the plugin and, as a baseline, against Claude without it:
 
