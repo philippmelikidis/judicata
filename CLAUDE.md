@@ -347,8 +347,19 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   never a decision; nothing without `.judicata/`, without a touched contract or on any error, exit always 0.
   Without a transcript (`claude -p --no-session-persistence`) the start comes from `started.recalled` and the
   session's rounds are those whose `round_started` ts is at or after it. Every `Problem` carries the gate mode of
-  its contract; `answer()` is the one place for block mode (#15), until then it always warns.
+  its contract; `answer()` is the one place that turns problems into output. Block mode (#15): `gate = "block"` or
+  `JUDICATA_GATE` (`warn`/`block`, case and spaces ignored, other values ignored, overrides every contract) gives
+  `{"decision": "block", "reason", "systemMessage"}`; the reason names only the block contracts' problems and says
+  what to do (review again, or tell the user honestly it is not done and end with the line `judicata: not done`),
+  the message all problems. `last_assistant_message` (Claude Code and Codex) whose last non-empty line starts with that marker
+  (`HONEST`, markdown and case ignored) = honest report: warn only, not counted. At most
+  `MAX_BLOCKS` (3) per session, counted in `<state>/gate/<same key as started.py>.json` {blocks, released}; the
+  next stop warns and appends `gate_released` {session, blocks, contracts, reason `block_limit`} once (the released
+  flag is saved after the ledger took it; a failed write is retried at the next stop and never keeps the block). No
+  usable count (no session id, state not writable or unreadable): warn only (`uncounted`), so the limit always
+  holds and `stop_hook_active` needs no rule.
 - `started.py`: session start markers `<state>/sessions/<sha256 of [root, session_id]>.json` {started}
+  (`started.path(root, session_id, folder)`, also used for the gate's block count)
   (`approvals.state_dir`, outside the project), written by the SessionStart hook only if absent (resume, clear
   and compact keep it, `O_EXCL`), markers older than 30 days pruned on write, every error ignored.
 
@@ -371,6 +382,7 @@ address, label, section_hash, file, line, summary, sightings[...]}, `contract_ve
 ... per name), contract_hash, template, paths, reviewers, stop, criteria[{id, text, check, required, params,
 hash}]}, `approval_logged` {contract, version, contract_hash, reason (`created`, `changed`)}: a log entry only, the
 core never reads it, it approves nothing. `contract_assigned` {path (relative, `.` = root), contract, among}.
+`gate_released` {session, blocks, contracts, reason} (stop gate, a log entry only, replay ignores it).
 `finding_recorded` also has `source` (missing = reviewer), criterion findings also criterion, criterion_hash,
 check, required, lines. `finding_decided` {round, contract, fingerprint, decision, reason, reopen_condition, kept
 (only for keep), source, category, criterion, criterion_hash, severity, consensus, address, label, section_hash,
@@ -463,7 +475,7 @@ exits 2, the core runs from a copy of `.agents/skills/` alone via `project.scrip
 there, no plugin name left in the copies, frontmatter), `test_review_focus.py`, `test_revision.py` also without `git`
 core equals the source, drift is reported and rebuilt, the core runs from a copy of `skills/` alone via
 `project.script`, frontmatter), `test_review_focus.py`, `test_stop_gate.py` (via `project.hook("stop", ...)` with a written transcript, Claude Code
-and Codex form, and without one after a SessionStart), `test_revision.py` also without `git`
+and Codex form, and without one after a SessionStart), `test_stop_gate_block.py` (block mode, limit, environment), `test_revision.py` also without `git`
 in PATH, `test_stop_rule.py`, `test_status.py`, `test_required_unmet.py`), `test_prompt_injection.py` (detection
 with attack and harmless examples, marking in hook, plan, list, contract, status), `test_text_cleaning.py`
 (defusing). `core/ok/fail` take `stdin=` (dict as JSON, str, bytes); `proposal()` fills a template proposal like

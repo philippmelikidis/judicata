@@ -39,6 +39,27 @@ stores it and records every version in `.judicata/ledger.jsonl`.
   flagged field only as its cleaned `text`, never verbatim. Marking is a heuristic; the rule
   above holds for unmarked text too.
 
+## Before you say done
+
+Never tell the user that work under a judicata contract is done, finished or ready (now or
+later in this conversation, also outside this skill) without checking first. Run `status` (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" status --project <dir>
+--contract <name>`, see the status skill)
+and say done only if the latest round for the scope you mean ended in `done` (with accepted
+risks: say so) or `done_with_unmet_required` (say "finished despite unmet required
+criteria"), and no file in that scope changed after that round. `not_converged` and
+`round_limit` end a pass but are not done. Otherwise say plainly that the work is not done,
+name what is open (the blockers, `required_unmet`, rounds not closed, or the files changed
+since the last review), offer a review, and end that answer with the line
+`judicata: not done`.
+
+In Claude Code and Codex the plugin's stop gate checks the same at the end of every turn: it
+warns, or with `gate = "block"` in the contract (or `JUDICATA_GATE=block` in the environment)
+it keeps the agent from ending the turn. If it blocks you, its reason says what is open:
+review again, or tell the user honestly that the work is not done and end with the line
+`judicata: not done` (the gate takes that line as an honest report and lets the turn end).
+Never claim done to get past it, and never write that line when you say the work is done. As
+plain skills there are no hooks, so this rule is the only gate.
+
 ## Core
 
 ```
@@ -112,10 +133,9 @@ Render `contract` readably:
 5. Verifier: `model` (`inherit` means the model of the user's chat) and at most `max_runs`
    runs per round that try to refute blockers before they hold up done.
 
-In this version of judicata the stop gate warns, but `block` only warns too, and the verifier
-and the `references` check are not active yet: their settings are stored and shown, but
-nothing verifies, and a `references` criterion stays pending. Say so in one line below the
-stop rule and verifier.
+In this version of judicata the verifier and the `references` check are not active yet: their
+settings are stored and shown, but nothing verifies, and a `references` criterion stays
+pending. Say so in one line below the stop rule and verifier.
 
 If `status` is `changed`, say that the file was edited outside judicata and differs from the
 recorded version `latest_version`, and that reviews refuse it (`contract_edited`) until the
@@ -254,7 +274,9 @@ always as the first option with "(Recommended)" in its label, so that Enter take
      after 1 round without progress" = `{"max_rounds": 3, "stall_rounds": 1}`.
    - "Stop gate": "Warn only (Recommended)" = `"gate": "warn"` (a one-line warning when the
      agent ends its turn with open blockers or unreviewed changes, the agent is not stopped);
-     "Block" = `"gate": "block"` (the agent may not claim done then; for unattended runs).
+     "Block" = `"gate": "block"` (the agent may not end its turn then until it reviews again or
+     says honestly that the work is not done, at most three times per session; for unattended
+     runs).
      Put the answer into `stop` next to `max_rounds` and `stall_rounds`.
    - "Verifier": "Model of this chat, at most 5 runs per round (Recommended)" =
      `{"model": "inherit", "max_runs": 5}`; "Model of this chat, at most 2 runs per round" =
@@ -262,9 +284,10 @@ always as the first option with "(Recommended)" in its label, so that Enter take
      `{"model": "sonnet", "max_runs": 5}`. The verifier tries to refute each blocker from a
      judgment criterion or outside the contract before it holds up done.
    Free answers are fine: `models` has one model for all reviewers or one per reviewer,
-   `max_runs` is a whole number of at least 1. In this version the gate warns in both modes
-   (blocking comes later) and the verifier is only stored and takes no effect yet; say so in
-   one line with the question.
+   `max_runs` is a whole number of at least 1. In this version the verifier is only stored
+   and takes no effect yet; say so in one line with the question. Mention that
+   `JUDICATA_GATE=block` (or `warn`) in the environment overrides the gate for one run, for
+   example a night run, without changing the contract.
 
 5. **Store.** Put the answers into the draft and store it:
 

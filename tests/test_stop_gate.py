@@ -28,9 +28,11 @@ from conftest import SCRIPT
 ROOT = SCRIPT.parent.parent
 
 
-def contract(*, max_rounds=5, stall_rounds=2, required=True, name="code") -> str:
+def contract(
+    *, max_rounds=5, stall_rounds=2, required=True, name="code", gate=None
+) -> str:
     """CODE-1 fails while the file `fail-<name>` exists at the project root;
-    the contract covers src/."""
+    the contract covers src/<name>. gate: the [stop] gate mode, None = default."""
     return (
         f'name = "{name}"\n'
         'template = "code"\n'
@@ -38,7 +40,8 @@ def contract(*, max_rounds=5, stall_rounds=2, required=True, name="code") -> str
         "\n[stop]\n"
         f"max_rounds = {max_rounds}\n"
         f"stall_rounds = {stall_rounds}\n"
-        "\n[[criteria]]\n"
+        + ("" if gate is None else f'gate = "{gate}"\n')
+        + "\n[[criteria]]\n"
         'id = "CODE-1"\n'
         'text = "Tests pass"\n'
         'check = "command"\n'
