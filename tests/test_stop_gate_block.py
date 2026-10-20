@@ -7,8 +7,9 @@ warn mode (see test_stop_gate.py) with
   {"decision": "block", "reason": "...", "systemMessage": "judicata: ..."}
 
 The reason tells the agent what is open (blockers, changed files) and what to
-do: review again, or tell the user honestly that the work is not done. Final
-results release the gate as in warn mode. A session gets at most three blocks;
+do: review again, or tell the user honestly that the work is not done and end
+with the line "judicata: not done" (last_assistant_message), which ends the
+turn without a block. Final results release the gate as in warn mode. A session gets at most three blocks;
 then the gate lets go, warns and records a gate_released event in the ledger.
 JUDICATA_GATE overrides the contract in both directions.
 """
@@ -143,6 +144,46 @@ def test_a_codex_session_is_blocked_the_same_way(project):
     round_id = review(project)
 
     assert blocked(stop(project, session(project, round_id, codex=True)))
+
+
+# an honest report
+
+
+@pytest.mark.parametrize(
+    "last",
+    [
+        "Not finished: CODE-1 still fails.\n\njudicata: not done",
+        "Noch offen ist CODE-1.\n\n**judicata: Not done**",
+        "judicata: not done (CODE-1 is open)",
+    ],
+)
+def test_an_honest_not_done_ends_the_turn_without_a_block(project, last):
+    hook_input = open_review(project, gate="block")
+
+    payload = stop(project, {**hook_input, "last_assistant_message": last})
+
+    assert set(payload) == {"systemMessage"}
+    # it did not count as a block
+    assert "1 of 3" in stop(project, hook_input)["reason"]
+
+
+@pytest.mark.parametrize(
+    "last",
+    [
+        "All done.",
+        "The work is not done yet, but I think it is fine.",
+        "I could say judicata: not done, but it is done.",
+        None,
+        7,
+    ],
+)
+def test_anything_else_is_no_honest_report(project, last):
+    hook_input = open_review(project, gate="block")
+
+    payload = stop(project, {**hook_input, "last_assistant_message": last})
+
+    assert blocked(payload)
+    assert "judicata: not done" in payload["reason"]
 
 
 # the limit

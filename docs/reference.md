@@ -159,13 +159,14 @@ What happens then depends on the gate mode:
 - **block** (`[stop] gate = "block"` in the contract, for everyone working on the project):
   the agent may not end its turn. The hook answers with `decision: "block"` and a reason that
   names the open blockers or the changed files and tells the agent what to do: review again,
-  or tell you plainly that the work is not done. You see the same in one line. The gate lets
-  go as soon as the latest review reached a final result, and after at most three blocks per
-  session: the next stop only warns and appends a `gate_released` event (session id, number
-  of blocks, contracts) to the ledger, so the gate can never trap an agent in a loop. An
-  agent that honestly reports "not done" is blocked again until that limit; the gate cannot
-  tell an honest report from a claim. The count lives in your state directory next to the
-  approvals; where it cannot be kept (no session id, a state directory that cannot be
+  or tell you plainly that the work is not done and end its answer with the line
+  `judicata: not done`. You see the same in one line. An answer whose last message has that
+  line is an honest report: the turn ends, you get the one-line warning, and it does not
+  count as a block. The gate lets go as soon as the latest review reached a final result,
+  and after at most three blocks per session: the next stop only warns and appends a
+  `gate_released` event (session id, number of blocks, contracts) to the ledger, so the gate
+  can never trap an agent in a loop. The gate reads only that line, not what the answer
+  says otherwise. The count lives in your state directory next to the approvals; where it cannot be kept (no session id, a state directory that cannot be
   written), the gate blocks at most once per turn (it lets go when the hook input says
   `stop_hook_active`).
 
@@ -173,7 +174,10 @@ What happens then depends on the gate mode:
 mode of every contract for that run without changing a contract: block your night runs
 (`JUDICATA_GATE=block claude -p ...`) while interactive sessions only warn, or warn where a
 contract says block. Other values are ignored. With several contracts, only those in block
-mode block; the others are named in your line.
+mode block; the others are named in your line. Checked with Claude Code 2.1.303
+(`claude -p --plugin-dir`) and Codex 0.163 (`codex exec` with the hook): one block, then the
+agent reported "not done" honestly and the turn ended; without the honest line, three blocks
+and the release.
 
 Sessions that touched no contract, projects without `.judicata/` and any error give no output.
 The hook finds the session's reviews in the session transcript (the round ids in its

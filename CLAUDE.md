@@ -334,7 +334,9 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   its contract; `answer()` is the one place that turns problems into output. Block mode (#15): `gate = "block"` or
   `JUDICATA_GATE` (`warn`/`block`, case and spaces ignored, other values ignored, overrides every contract) gives
   `{"decision": "block", "reason", "systemMessage"}`; the reason names only the block contracts' problems and says
-  what to do (review again, or tell the user honestly it is not done), the message all problems. At most
+  what to do (review again, or tell the user honestly it is not done and end with the line `judicata: not done`),
+  the message all problems. `last_assistant_message` (Claude Code and Codex) with a line starting with that marker
+  (`HONEST`, markdown and case ignored) = honest report: warn only, not counted. At most
   `MAX_BLOCKS` (3) per session, counted in `<state>/gate/<same key as started.py>.json` {blocks, released}; the
   next stop warns and appends `gate_released` {session, blocks, contracts, reason `block_limit`} once (only after
   the released flag was saved). No usable count (no session id, state not writable or unreadable): block only when
