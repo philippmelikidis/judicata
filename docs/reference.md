@@ -165,6 +165,12 @@ Ask in plain words as in Claude Code ("review this again", "is it done?") or nam
   files with shell commands in your session's sandbox and are told to change nothing, and
   they see the project's `AGENTS.md`. If sub-agents are switched off, the review runs with
   one reviewer, the session itself, and the report says that it was not independent.
+- **Schema check of reviewer answers.** In Claude Code a SubagentStop hook sends a reviewer
+  whose answer is not valid JSON for the output schema back once, with the exact problems.
+  Codex runs SubagentStop hooks too, but every sub-agent there has the same type
+  (`default`), so judicata cannot tell its reviewers from your other sub-agents and leaves
+  all of them alone. A malformed answer then reaches the core, which rejects it, and the
+  review skill asks the reviewer once more, as without the hook.
 - **Questions** come as a numbered list in the chat; answer with the number or in words.
 - **Approvals** of a contract's commands are stored in `~/.local/state/judicata` (or
   `$XDG_STATE_HOME/judicata`), not in Claude Code's plugin data directory, so you approve
@@ -215,6 +221,9 @@ your agent's own commands and other skills). What a plain install does not have:
   instruction only, as in Codex. Model names of Claude (opus, sonnet) become your session's
   model, and the report says so. If your agent has no sub-agents, the review runs with one
   reviewer, the session itself, and the report says that it was not independent.
+- **No schema hook.** A reviewer answer that does not match the output schema reaches the
+  core, which rejects it, and the review skill asks the reviewer once more (in Claude Code a
+  hook sends it back before that).
 - **No question buttons.** Without a question tool, questions come as a numbered list in the
   chat, as in Codex.
 - **Approvals** of a contract's commands are stored in `~/.local/state/judicata` (or

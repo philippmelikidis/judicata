@@ -63,6 +63,7 @@ What each install gets:
 | --- | --- | --- | --- |
 | Summary of your decisions in every new session (hook) | yes | yes, once you trusted the hook | no: the review and status skills read it themselves when they run, and say so |
 | Independent reviewers in a fresh context | sub-agents with read-only tools | sub-agents, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents one reviewer, the session itself, and the report says so |
+| Reviewer with an invalid answer sent back once with the exact schema error (hook) | yes | no: the core rejects it and the skill asks the reviewer once more | no: the same core check |
 | Questions | answer buttons | numbered list | the agent's question tool, or a numbered list |
 | Skills | `/judicata:review`, `/judicata:contract`, `/judicata:status` | `judicata:review`, ... | `judicata-review`, `judicata-contract`, `judicata-status` |
 
