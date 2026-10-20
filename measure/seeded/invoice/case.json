@@ -1,0 +1,75 @@
+{
+  "contract": {
+    "name": "code",
+    "template": "code",
+    "paths": [
+      "src/**"
+    ],
+    "reviewers": {
+      "count": 1,
+      "models": [
+        "inherit"
+      ]
+    },
+    "stop": {
+      "max_rounds": 5,
+      "stall_rounds": 2
+    },
+    "criteria": [
+      {
+        "id": "CODE-1",
+        "text": "No TODO or FIXME markers left in the code",
+        "check": "pattern",
+        "required": true,
+        "forbid": "\\b(TODO|FIXME)\\b"
+      }
+    ]
+  },
+  "pick": 2,
+  "mutations": [
+    {
+      "id": "vat-rounding",
+      "kind": "bug",
+      "file": "src/invoice/totals.py",
+      "find": "return (net_cents * VAT_PERCENT + 50) // 100",
+      "replace": "return net_cents * VAT_PERCENT // 100",
+      "summary": "vat() rounds down instead of half up"
+    },
+    {
+      "id": "gross-adds-rate",
+      "kind": "bug",
+      "file": "src/invoice/totals.py",
+      "find": "return net_cents + vat(net_cents)",
+      "replace": "return net_cents + VAT_PERCENT",
+      "summary": "gross() adds the rate instead of the VAT amount"
+    },
+    {
+      "id": "subtotal-ignores-qty",
+      "kind": "bug",
+      "file": "src/invoice/totals.py",
+      "find": "sum(line[\"qty\"] * line[\"unit_cents\"] for line in lines)",
+      "replace": "sum(line[\"unit_cents\"] for line in lines)",
+      "summary": "subtotal() ignores the quantity"
+    },
+    {
+      "id": "discount-full",
+      "kind": "bug",
+      "file": "src/invoice/totals.py",
+      "find": "if not 0 <= percent <= 100:",
+      "replace": "if not 0 <= percent < 100:",
+      "summary": "discounted() rejects a 100 percent discount"
+    },
+    {
+      "id": "due-days-default",
+      "kind": "decoy",
+      "file": "src/invoice/totals.py",
+      "find": "return customer.get(\"due_days\", 30)",
+      "keywords": [
+        "due_days",
+        "default"
+      ],
+      "reason": "30 days is the payment term of our standard terms; a customer without a value has the standard terms.",
+      "reopen_if": "the standard payment term changes"
+    }
+  ]
+}
