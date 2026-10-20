@@ -113,6 +113,8 @@ class Round:
     confirmed: dict | None = None  # finish_confirmed of this round
     verifier_plan: dict | None = None  # verifiers_planned (verification.py)
     verdicts: dict[str, dict] = field(default_factory=dict)  # run -> verdict
+    # fingerprint -> an earlier round's verdict the plan reuses (verification.py)
+    reused: dict[str, dict] = field(default_factory=dict)
     verifier_rejections: dict[str, list[dict]] = field(default_factory=dict)
     verifier_discards: dict[str, dict] = field(default_factory=dict)
 
@@ -209,7 +211,23 @@ def _apply(rounds: dict[str, Round], event: dict, seq: int, known: dict) -> None
         _require(data, "runs", "unverified", "max_runs", "candidates")
         found = rounds[data["round"]]
         if found.verifier_plan is None:
-            found.verifier_plan = data
+            found.verifier_plan = {
+                **data,
+                "runs": list(data["runs"]),
+                "unverified": list(data["unverified"]),
+            }
+            found.reused = verification.reused(data)
+    elif event["type"] == verification.VERIFIERS_ADDED and data["round"] in rounds:
+        _require(data, "runs")
+        plan = rounds[data["round"]].verifier_plan
+        if plan is not None:
+            known_runs = {r["run"] for r in plan["runs"]}
+            added = [r for r in data["runs"] if r["run"] not in known_runs]
+            plan["runs"] += added
+            gone = {r["fingerprint"] for r in added}
+            plan["unverified"] = [
+                u for u in plan["unverified"] if u["fingerprint"] not in gone
+            ]
     elif event["type"] == verification.VERIFIER_VERDICT and data["round"] in rounds:
         _require(data, "run", "fingerprint", "verdict", "reason")
         found = rounds[data["round"]]
@@ -221,7 +239,8 @@ def _apply(rounds: dict[str, Round], event: dict, seq: int, known: dict) -> None
             }
     elif event["type"] == verification.VERDICT_REOPENED and data["round"] in rounds:
         _require(data, "verdict", "reason")
-        for verdict in rounds[data["round"]].verdicts.values():
+        found = rounds[data["round"]]
+        for verdict in [*found.verdicts.values(), *found.reused.values()]:
             if verdict["event"] == data["verdict"] and not verdict.get("reopened"):
                 verdict["reopened"] = {
                     "event": event["id"],
@@ -481,6 +500,7 @@ def with_state(entry: dict, contract_name: str, found: dict, round_id: str) -> d
         entry["consensus"] == "unconfirmed"
         and item.state == "open"
         and not item.confirmed
+        and not verification.refuted(item.verification or {})
     )
     represented = (
         kind == "represented"

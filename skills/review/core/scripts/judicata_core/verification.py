@@ -1,19 +1,29 @@
 """Verification of blockers: which ones a verifier challenges, and what its verdict does.
 
-Only confirmed blockers that came from a judgment are verified: findings of a
-required judgment criterion the reviewers settled (consensus single or agreed,
-not decided by the user) and reviewer findings outside the contract that block
-(blocker, consensus single_reviewer or confirmed). Command and pattern criteria
-are facts and never verified; optional criteria are should-fix, not blockers.
-Skipped as well: a finding the user decided in this round, a suppressed or
-represented one (the register), and one the user reopened at the same section
-hash (the user's word stands). Unconfirmed blockers (one reviewer of several)
-are left to the user here; see select() for where they would join.
+Only blockers that came from a judgment are verified: findings of a required
+judgment criterion the reviewers settled (consensus single or agreed, not
+decided by the user) and reviewer findings outside the contract that are
+blockers (consensus single_reviewer, confirmed, or unconfirmed: only one of
+several reviewers saw it). Command and pattern criteria are facts and never
+verified; optional criteria are should-fix, not blockers. Skipped as well: a
+finding the user decided in this round, a suppressed or represented one (the
+register), and one the user reopened at the same section hash (the user's word
+stands). An unconfirmed blocker goes to the verifier before the user: verified
+confirms it (it blocks like a confirmed one), refuted makes it a note, and only
+an inconclusive, discarded or unverified one is put to the user.
 
 Order, most severe first (all candidates are blockers): findings of required
 criteria, then reviewer findings by category (security, correctness, factual),
-then more sightings first, then label and fingerprint. The first [verifier]
-max_runs get a run, the rest are listed as unverified and stay blockers.
+then more sightings first (so confirmed before unconfirmed), then label and
+fingerprint.
+
+Reuse: a blocker with a verdict from another round at the same place (same
+fingerprint and section hash, for a criterion finding the same criterion hash)
+gets no new run; the plan stores that verdict under reused and the round uses it
+as its own (marked reused). A refutation is reused only while all its
+counter-evidence still checks out; a reopened one never. The first [verifier]
+max_runs of the rest get a run, the others are listed as unverified and stay
+blockers. On the user's request (verify more) they get runs too.
 
 Verdicts (verifier_verdict, per round and fingerprint): verified (marked, still
 blocks), refuted (only with checked counter-evidence; the finding counts as a
@@ -22,9 +32,13 @@ A refutation without valid counter-evidence is stored as inconclusive.
 
 Events (data fields):
   verifiers_planned        round, contract, model, max_runs, candidates (count),
-                           runs [{run, model, **blocker}], unverified [blocker]
-                           (blocker = BRIEF fields of the finding)
+                           runs [{run, model, **blocker}], reused [{**blocker,
+                           verification (STORED fields of the earlier verdict)}],
+                           unverified [blocker] (blocker = BRIEF fields)
+  verifiers_added          round, runs [{run, model, **blocker}]: the user asked to
+                           verify the unverified blockers too (verify more)
   verifier_verdict         round, run, model, contract, fingerprint, section_hash,
+                           criterion_hash,
                            severity (before the verdict), verdict, claimed (what
                            the verifier answered), reason, counter_evidence
                            [{kind quote: file, line, quote} | {kind command:
@@ -41,6 +55,7 @@ Events (data fields):
 from .errors import JudicataError
 
 VERIFIERS_PLANNED = "verifiers_planned"
+VERIFIERS_ADDED = "verifiers_added"
 VERIFIER_VERDICT = "verifier_verdict"
 VERIFIER_OUTPUT_REJECTED = "verifier_output_rejected"
 VERIFIER_RUN_DISCARDED = "verifier_run_discarded"
@@ -50,13 +65,16 @@ VERDICTS = ("verified", "refuted", "inconclusive")
 MAX_ATTEMPTS = 2  # the first output and one retry
 SETTLED = ("single", "agreed")  # judgment consensus the reviewers reached alone
 CONFIRMED = ("single_reviewer", "confirmed")  # reviewer findings that block
+UNCONFIRMED = "unconfirmed"  # a blocker only one of several reviewers saw
 CATEGORY_ORDER = ("security", "correctness", "factual")
 
 BRIEF = (
     "fingerprint",
     "source",
     "criterion",
+    "criterion_hash",
     "category",
+    "consensus",
     "label",
     "file",
     "line",
@@ -94,7 +112,81 @@ def public(verification: dict | None) -> dict | None:
             "event",
             "ts",
             "reopened",
+            "reused",
         )
+    }
+
+
+# what a plan keeps of an earlier verdict it reuses
+STORED = (
+    "round",
+    "run",
+    "model",
+    "contract",
+    "fingerprint",
+    "section_hash",
+    "criterion_hash",
+    "severity",
+    "verdict",
+    "claimed",
+    "reason",
+    "counter_evidence",
+    "downgraded",
+    "independent",
+    "event",
+    "ts",
+)
+
+
+def earlier(all_rounds: dict, contract_name: str, entry: dict, round_id: str):
+    """The latest verdict of another round on this blocker at the same place.
+
+    Same contract and fingerprint, same section hash, for a criterion finding
+    also the same criterion hash; a reopened refutation does not count.
+    """
+    section = entry.get("section_hash")
+    if not section:
+        return None
+    best = None
+    for other in all_rounds.values():
+        if other.id == round_id or other.contract != contract_name:
+            continue
+        for verdict in other.verdicts.values():
+            if (
+                verdict.get("fingerprint") != entry["fingerprint"]
+                or verdict.get("section_hash") != section
+                or verdict.get("reopened")
+            ):
+                continue
+            if entry["source"] == "criterion" and (
+                not verdict.get("criterion_hash")
+                or verdict["criterion_hash"] != entry.get("criterion_hash")
+            ):
+                continue
+            if best is None or _when(verdict) > _when(best):
+                best = verdict
+    return best
+
+
+def _when(verdict: dict) -> tuple:
+    return (verdict.get("ts") or "", verdict.get("event") or "")
+
+
+def stored(verdict: dict) -> dict:
+    return {key: verdict.get(key) for key in STORED}
+
+
+def reused(plan: dict) -> dict[str, dict]:
+    """fingerprint -> the earlier verdict a plan reuses, marked as reused."""
+    return {
+        entry["fingerprint"]: {
+            **entry["verification"],
+            "reused": {
+                "round": entry["verification"].get("round"),
+                "event": entry["verification"].get("event"),
+            },
+        }
+        for entry in plan.get("reused") or []
     }
 
 
@@ -138,8 +230,8 @@ def select(
                 or evidence.get("consensus") not in SETTLED
             ):
                 continue
-        elif entry.get("consensus") not in CONFIRMED:
-            continue  # unconfirmed blockers would join here (put to the user today)
+        elif entry.get("consensus") not in (*CONFIRMED, UNCONFIRMED):
+            continue
         chosen.append(entry)
     chosen.sort(key=_order)
     return chosen
@@ -205,10 +297,15 @@ def summary(current_round, eligible: list[dict]) -> dict:
     """
     plan = current_round.verifier_plan
     verdicts = list(current_round.verdicts.values())
+    verdicts += list(current_round.reused.values())
     shown = {verdict: [] for verdict in VERDICTS}
     runs = {r["run"]: r for r in plan["runs"]} if plan else {}
+    again = {r["fingerprint"]: r for r in plan.get("reused") or []} if plan else {}
     for verdict in verdicts:
-        blocker = runs.get(verdict["run"], {})
+        if verdict.get("reused"):
+            blocker = again.get(verdict["fingerprint"], {})
+        else:
+            blocker = runs.get(verdict["run"], {})
         shown[verdict["verdict"]].append(
             {
                 **{key: blocker.get(key) for key in BRIEF},
@@ -233,6 +330,7 @@ def summary(current_round, eligible: list[dict]) -> dict:
         "max_runs": plan["max_runs"] if plan else None,
         "candidates": plan["candidates"] if plan else len(eligible),
         **shown,
+        "reused": len(current_round.reused),
         "discarded": discarded,
         "unverified": list(plan["unverified"])
         if plan

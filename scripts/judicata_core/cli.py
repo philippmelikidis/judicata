@@ -245,6 +245,14 @@ def _add_verify(groups, common) -> None:
     plan.add_argument("--round", required=True, help="round id from round start")
     plan.set_defaults(handler=lambda a, p: verifier.plan(p, a.round))
 
+    more = commands.add_parser(
+        "more",
+        parents=[common],
+        help="on the user's request: one run for each blocker over the limit",
+    )
+    more.add_argument("--round", required=True, help="round id from round start")
+    more.set_defaults(handler=lambda a, p: verifier.more(p, a.round))
+
     submit = commands.add_parser(
         "submit",
         parents=[common],

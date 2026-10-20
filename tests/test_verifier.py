@@ -29,6 +29,7 @@ def contract_text(
     judgment_required: bool = True,
     max_runs: int | None = None,
     model: str | None = None,
+    gate: str | None = None,
 ) -> str:
     text = command_contract(command, required=command_required)
     text += (
@@ -46,6 +47,10 @@ def contract_text(
     if settings:
         text = text.replace(
             'paths = ["**"]', 'paths = ["**"]\n\n[verifier]\n' + "\n".join(settings)
+        )
+    if gate is not None:
+        text = text.replace(
+            'paths = ["**"]', f'paths = ["**"]\n\n[stop]\ngate = "{gate}"'
         )
     return text
 
@@ -535,19 +540,99 @@ def test_a_verified_blocker_is_marked_in_status(project):
     assert blocker["verification"]["verdict"] == "verified"
 
 
-def test_a_later_round_that_sees_the_blocker_again_verifies_it_afresh(project):
+def closed_with(project, name: str, *outputs: str) -> str:
+    """A round whose single verifier run answered with the fixture, closed."""
+    round_id = reviewed(project, *(outputs or (reviewer_output("fail"),)))
+    verified_with(project, round_id, name)
+    project.ok("round", "close", "--round", round_id)
+    return round_id
+
+
+def test_a_refuted_blocker_at_an_unchanged_place_needs_no_new_run(project):
     setup(project)
-    first = reviewed(project, reviewer_output("fail"))
-    verified_with(project, first, "refuted")
-    project.ok("round", "close", "--round", first)
+    first = closed_with(project, "refuted")
 
     second = reviewed(project, reviewer_output("fail"))
-    [run] = project.ok("verify", "plan", "--round", second)["runs"]
+    plan = project.ok("verify", "plan", "--round", second)
+    [finding] = project.ok("finding", "list", "--round", second)["findings"]
+    closed = project.ok("round", "close", "--round", second)
+
+    assert plan["runs"] == []
+    [reused] = plan["reused"]
+    assert reused["verification"]["verdict"] == "refuted"
+    assert reused["verification"]["reused"]["round"] == first
+    assert finding["severity"] == "note"
+    assert closed["outcome"] == "done"
+    [entry] = closed["verification"]["refuted"]
+    assert entry["verification"]["reused"]["round"] == first
+    assert closed["verification"]["reused"] == 1
+
+
+def test_a_verified_blocker_at_an_unchanged_place_keeps_its_verdict(project):
+    setup(project)
+    closed_with(project, "verified", reviewer_output("findings"))
+
+    second = reviewed(project, reviewer_output("findings"))
+    plan = project.ok("verify", "plan", "--round", second)
+    closed = project.ok("round", "close", "--round", second)
+
+    assert plan["runs"] == []
+    assert plan["candidates"] == 1
+    [blocking] = closed["blocking_findings"]
+    assert blocking["verification"]["verdict"] == "verified"
+
+
+def test_a_changed_place_gets_a_new_run(project):
+    setup(project)
+    closed_with(project, "refuted")
+    app = project.root / "src" / "app.py"
+    app.write_text(
+        app.read_text(encoding="utf-8").replace(
+            "def average(values):\n", "def average(values):\n    # the mean\n"
+        ),
+        encoding="utf-8",
+    )
+
+    second = reviewed(project, reviewer_output("fail"))
+    plan = project.ok("verify", "plan", "--round", second)
     [finding] = project.ok("finding", "list", "--round", second)["findings"]
 
-    assert run["blocker"]["criterion"] == "JUD-1"
+    assert len(plan["runs"]) == 1
+    assert plan["reused"] == []
     assert finding["severity"] == "blocker"
     assert finding["verification"] is None
+
+
+def test_a_changed_criterion_gets_a_new_run(project):
+    setup(project)
+    closed_with(project, "verified")
+    project.write_contract(
+        "code",
+        contract_text().replace(
+            "No known correctness bugs in scope", "No correctness bugs in scope"
+        ),
+    )
+
+    second = reviewed(project, reviewer_output("fail"))
+    plan = project.ok("verify", "plan", "--round", second)
+
+    assert len(plan["runs"]) == 1
+    assert plan["reused"] == []
+
+
+def test_a_refutation_whose_counter_evidence_is_gone_gets_a_new_run(project):
+    setup(project)
+    closed_with(project, "refuted")
+    (project.root / "src" / "callers.py").write_text(
+        "from app import average\n\n\ndef mean(values):\n    return average(values)\n",
+        encoding="utf-8",
+    )
+
+    second = reviewed(project, reviewer_output("fail"))
+    plan = project.ok("verify", "plan", "--round", second)
+
+    assert len(plan["runs"]) == 1
+    assert plan["reused"] == []
 
 
 def test_a_command_counts_only_with_a_whole_line_of_its_output(project):
@@ -589,3 +674,159 @@ def test_a_narrowed_round_takes_counter_evidence_from_the_whole_contract(project
     submitted = verified_with(project, round_id, "refuted")
 
     assert submitted["verdict"] == "refuted"
+
+
+def test_an_unconfirmed_blocker_goes_to_the_verifier_and_verified_counts(project):
+    setup(project)
+    round_id = reviewed(project, reviewer_output("findings"), reviewer_output("pass"))
+
+    [run] = project.ok("verify", "plan", "--round", round_id)["runs"]
+    assert run["blocker"]["consensus"] == "unconfirmed"
+    code, payload = verify(project, round_id, run, verifier_output("verified"))
+    assert code == 0, payload
+    listed = project.ok("finding", "list", "--round", round_id)
+    closed = project.ok("round", "close", "--round", round_id)
+
+    [finding] = listed["findings"]
+    assert finding["needs_decision"] is False
+    assert finding["blocking"] is True
+    assert listed["decisions_needed"] == []
+    assert closed["outcome"] == "continue"
+    [blocking] = closed["blocking_findings"]
+    assert blocking["verification"]["verdict"] == "verified"
+
+
+def test_a_refuted_unconfirmed_blocker_is_a_note_and_needs_no_decision(project):
+    setup(project)
+    round_id = reviewed(project, reviewer_output("findings"), reviewer_output("pass"))
+
+    verified_with(project, round_id, "refuted")
+    closed = project.ok("round", "close", "--round", round_id)
+
+    assert closed["outcome"] == "done"
+    [finding] = closed["findings"]
+    assert finding["severity"] == "note"
+    assert finding["needs_decision"] is False
+    assert finding["verification"]["verdict"] == "refuted"
+
+
+def test_only_an_inconclusive_unconfirmed_blocker_is_put_to_the_user(project):
+    setup(project)
+    round_id = reviewed(project, reviewer_output("findings"), reviewer_output("pass"))
+
+    verified_with(project, round_id, "inconclusive")
+    listed = project.ok("finding", "list", "--round", round_id)
+    error = project.fail("round", "close", "--round", round_id)
+
+    [finding] = listed["findings"]
+    assert finding["needs_decision"] is True
+    assert listed["decisions_needed"] == [finding["fingerprint"]]
+    assert error["code"] == "decision_needed"
+    project.ok(
+        "finding",
+        "decide",
+        "--round",
+        round_id,
+        "--fingerprint",
+        finding["fingerprint"],
+        "--decision",
+        "fix",
+    )
+    assert project.ok("round", "close", "--round", round_id)["outcome"] == "continue"
+
+
+def test_the_user_reopens_a_reused_refutation(project):
+    setup(project)
+    closed_with(project, "refuted")
+    second = reviewed(project, reviewer_output("fail"))
+    [reused] = project.ok("verify", "plan", "--round", second)["reused"]
+
+    project.ok(
+        "verify",
+        "reopen",
+        "--round",
+        second,
+        "--fingerprint",
+        reused["fingerprint"],
+        "--reason",
+        "callers.py is not the only caller",
+    )
+    closed = project.ok("round", "close", "--round", second)
+
+    assert closed["outcome"] == "continue"
+    [place] = closed["blockers"][0]["findings"]
+    assert place["verification"]["reopened"]["reason"] == (
+        "callers.py is not the only caller"
+    )
+    third = reviewed(project, reviewer_output("fail"))
+    plan = project.ok("verify", "plan", "--round", third)
+    assert plan["runs"] == [] and plan["reused"] == []
+
+
+def over_the_limit(project, **contract) -> str:
+    """A round with three blockers and room for one verifier run."""
+    project.env["JUDICATA_GATE"] = None
+    setup(project, max_runs=1, **contract)
+    return reviewed(project, with_findings("fail", RATIO, CART))
+
+
+def test_over_the_limit_an_interactive_run_may_ask_once_to_verify_the_rest(project):
+    round_id = over_the_limit(project)
+
+    plan = project.ok("verify", "plan", "--round", round_id)
+
+    assert len(plan["runs"]) == 1
+    assert plan["unverified_count"] == 2
+    assert plan["gate"] == {"mode": "warn", "source": "contract"}
+    assert plan["ask_more"] is True
+
+
+def test_block_mode_never_asks_to_verify_more(project):
+    round_id = over_the_limit(project, gate="block")
+    plan = project.ok("verify", "plan", "--round", round_id)
+    assert plan["gate"] == {"mode": "block", "source": "contract"}
+    assert plan["ask_more"] is False
+
+
+def test_the_environment_decides_the_gate_for_an_unattended_run(project):
+    round_id = over_the_limit(project)
+    project.env["JUDICATA_GATE"] = "block"
+    plan = project.ok("verify", "plan", "--round", round_id)
+    assert plan["gate"] == {"mode": "block", "source": "JUDICATA_GATE"}
+    assert plan["ask_more"] is False
+
+    project.env["JUDICATA_GATE"] = "warn"
+    again = project.ok("verify", "plan", "--round", round_id)
+    assert again["ask_more"] is True
+
+
+def test_nothing_to_ask_within_the_limit(project):
+    setup(project)
+    project.env["JUDICATA_GATE"] = None
+    round_id = reviewed(project, reviewer_output("fail"))
+    plan = project.ok("verify", "plan", "--round", round_id)
+    assert plan["ask_more"] is False
+
+    error = project.fail("verify", "more", "--round", round_id)
+    assert error["code"] == "nothing_unverified"
+
+
+def test_on_request_the_rest_is_verified_too(project):
+    round_id = over_the_limit(project)
+    [first] = project.ok("verify", "plan", "--round", round_id)["runs"]
+
+    more = project.ok("verify", "more", "--round", round_id)
+
+    assert len(more["runs"]) == 3
+    assert more["unverified"] == []
+    assert more["ask_more"] is False
+    added = [r for r in more["runs"] if r["run"] != first["run"]]
+    assert [r["status"] for r in added] == ["waiting", "waiting"]
+    assert more["added"] == [r["run"] for r in added]
+    for run in more["runs"]:
+        code, payload = verify(project, round_id, run, verifier_output("verified"))
+        assert code == 0, payload
+    closed = project.ok("round", "close", "--round", round_id)
+    assert closed["verification"]["unverified"] == []
+    assert len(closed["verification"]["verified"]) == 3
+    assert closed["verification"]["candidates"] == 3

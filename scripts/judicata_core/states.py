@@ -36,9 +36,11 @@ the artifact before the fix (two open rounds, merged branches).
 rejected and accepted form the register of accepted risks.
 
 Verification (verification.py): a verifier_verdict belongs to one round and
-fingerprint; the round's finding_recorded attaches it (verification). A refuted
+fingerprint; the round's finding_recorded attaches it (verification), also an
+earlier verdict the round's verifiers_planned reuses (marked reused). A refuted
 one makes the finding a note while it stands: not blocking, severity note. A
-later round that records the finding again starts without a verdict. A
+verified one confirms an unconfirmed finding. A later round that records the
+finding again without a verdict of its own starts without one. A
 verdict_reopened (the user disagrees) gives the finding its severity back.
 
 Presentation of a sighting of a rejected or accepted finding (per round, set
@@ -175,6 +177,10 @@ def replay(events: list[dict], all_rounds: dict) -> dict[tuple[str, str], Findin
         data = event["data"]
         if event["type"] == ROUND_STARTED:
             started[event["id"]] = seq
+        elif event["type"] == verification.VERIFIERS_PLANNED:
+            for fingerprint, verdict in verification.reused(data).items():
+                key = (data.get("round"), data.get("contract"), fingerprint)
+                verdicts.setdefault(key, verdict)
         elif event["type"] in (
             verification.VERIFIER_VERDICT,
             verification.VERDICT_REOPENED,
@@ -297,6 +303,8 @@ def _verify(item: Finding, data: dict, verdicts: dict, recorded=True) -> None:
         item.verification = None
         return
     item.verification = found
+    if found.get("verdict") == "verified":
+        item.confirmed = True  # it survived the challenge: as real as a second reviewer
     if verification.refuted(found):
         item.info["severity"] = "note"
     elif found.get("severity") and item.info.get("severity") == "note":
