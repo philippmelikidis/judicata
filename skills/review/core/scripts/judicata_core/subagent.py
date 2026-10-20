@@ -30,7 +30,7 @@ import sys
 from . import review, untrusted
 
 MAX_INPUT_BYTES = 8 * 1024 * 1024  # hook input: the answer plus the host's fields
-MAX_LISTED = 20  # problems named in the reason, the rest is counted
+MAX_LISTED = 200  # problems named in the reason, the rest is counted
 INTRO = (
     "judicata cannot use your answer: it does not match the output schema. "
     "Fix exactly these problems and answer again with the complete JSON "
@@ -69,8 +69,9 @@ def reason(problems: list[dict]) -> str:
     """What the sub-agent reads: every problem as `- field: problem`."""
     lines = [INTRO]
     for item in problems[:MAX_LISTED]:
-        field = untrusted.visible(item["field"])
-        lines.append(f"- {field}: {untrusted.visible(item['problem'])}")
+        # field names and JSON errors quote the answer: one defused line each
+        field = untrusted.clean(item["field"], untrusted.LABEL_LIMIT)
+        lines.append(f"- {field}: {untrusted.clean(item['problem'])}")
     if len(problems) > MAX_LISTED:
         lines.append(f"- and {len(problems) - MAX_LISTED} more problems")
     return "\n".join(lines)

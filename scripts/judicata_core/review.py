@@ -564,7 +564,8 @@ def _validate(project: Project, current_round: rounds.Round, text: str):
 def parse_output(text: str, wanted: dict):
     """(object, problems) of an agent's answer: one JSON object, optionally in
     a Markdown code fence, valid against the schema wanted."""
-    if len(text.encode("utf-8")) > MAX_INPUT_BYTES:
+    # surrogatepass: a hook input can carry a lone surrogate (an escape in JSON)
+    if len(text.encode("utf-8", "surrogatepass")) > MAX_INPUT_BYTES:
         return None, [_problem("", f"larger than {MAX_INPUT_BYTES} bytes")]
     text = text.strip()
     fenced = FENCE_RE.match(text)
@@ -574,7 +575,7 @@ def parse_output(text: str, wanted: dict):
         return None, [_problem("", "empty, expected one JSON object")]
     try:
         raw = json.loads(text)
-    except json.JSONDecodeError as exc:
+    except ValueError as exc:  # also an integer longer than Python reads
         return None, [_problem("", f"not valid JSON ({exc})")]
     except RecursionError:
         return None, [_problem("", "nested too deeply")]
