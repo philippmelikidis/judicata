@@ -310,6 +310,16 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   hosts without hooks: finds the root like the hook (`find_root` from `--project`, not above the Git root) and
   returns it as `project` (the skills use it as `<dir>`); without one `found` false, `project` and `context` null.
   Hook and summary share `_safe_context`.
+- `subagent.py` (hook, v0.2 #13): `judicata.py hook subagent-stop` (`cli.main` hands off to `subagent.main`), run
+  by `hooks/hooks.json` for every SubagentStop (no matcher, the core picks the agent). Acts only for judicata's own
+  agents, by `agent_type` in `subagent.AGENTS` (`judicata:reviewer` -> `review.output_schema`; the verifier joins
+  there with its schema): checks `last_assistant_message` with `review.parse_output` (the first stage of `review
+  submit`: size, fence, JSON, schema) and, if invalid and `stop_hook_active` is not `true`, prints
+  `{"decision": "block", "reason": ...}` with every problem as `- field: problem` (at most 20). Otherwise, for other
+  agents, without a message or on any error nothing, exit always 0, writes nothing. Places, criteria and the round
+  stay with `review submit`, which validates every answer itself. Codex: `agent_type` is always `default` (spike
+  #6), so the hook never acts there; the task text would only be reachable through Codex's rollout file, which
+  also carries the project's `AGENTS.md`, so no marker there is safe.
 
 **Ledger** (`ledger.py`): `.judicata/ledger.jsonl`, append only, one line per event
 `{"id": uuid4-hex, "ts": UTC ISO 8601 with Z, "type": snake_case, "data": {...}}`. Reading drops duplicate IDs

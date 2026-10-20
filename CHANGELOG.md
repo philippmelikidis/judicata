@@ -6,6 +6,8 @@ version users get: Claude Code updates the plugin only when it goes up.
 
 ## [Unreleased]
 
+- Claude Code: a SubagentStop hook checks the answer of judicata's reviewer against the output schema and sends the reviewer back once with the exact problems; a second invalid answer goes to the core, which rejects it as before. Other sub-agents are never touched; Codex keeps the core check (all its sub-agents have the same type).
+
 ## [0.1.0] - 2026-10-19
 
 First public release.
