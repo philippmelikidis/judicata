@@ -20,6 +20,7 @@ from . import (
     decisions,
     findings,
     gate,
+    report,
     review,
     rounds,
     session,
@@ -102,6 +103,14 @@ def _add_round(groups, common) -> None:
     )
     close.add_argument("--round", required=True, help="round id from round start")
     close.set_defaults(handler=lambda a, p: rounds.close(p, a.round))
+
+    shown = commands.add_parser(
+        "report",
+        parents=[common],
+        help="the whole result of a round, before any decision question",
+    )
+    shown.add_argument("--round", required=True, help="round id from round start")
+    shown.set_defaults(handler=lambda a, p: report.report(p, a.round))
 
     finish = commands.add_parser(
         "finish",

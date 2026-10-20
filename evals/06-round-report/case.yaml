@@ -1,0 +1,60 @@
+schema_version: "1.0"
+name: round-report-before-decisions
+description: >
+  Before any decision question the user sees the whole round. The contract
+  forbids TODO and FIXME markers (CODE-1, required); src/billing/export.py has
+  one of each, so CODE-1 fails at two places, and the code has real bugs a
+  reviewer may report (31.02. is accepted as a date, customer names go into
+  the CSV unescaped). The reply must show the round report first: the one line
+  result, every criterion, every finding on its own with a number, place,
+  what is wrong and evidence, and what happens next. Any question about the
+  findings comes after it and names the findings by number.
+tags: [v0.2, report]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: |
+    Review src please. I can't answer follow-up questions right now, so
+    leave anything that needs my decision open.
+  max_turns: 40
+  timeout_seconds: 900
+  allowed_tools: [Skill, Agent, Bash, Read, Glob, Grep]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: round-closed
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_closed"'
+  - name: both-places-of-code-1-recorded
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"finding_recorded",[^\n]*"category": ?"CODE-1"'
+    match: "count:2"
+  - name: no-decision-made-for-the-user
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"finding_decided"'
+    match: not_contains
+  - name: report-before-questions
+    type: llm
+    criteria: |
+      The contract has one required criterion CODE-1 (no TODO or FIXME
+      markers). src/billing/export.py has a TODO (in parse_day) and a FIXME
+      (in to_csv), so CODE-1 fails at two places; a reviewer may report more.
+      PASS only if the reply contains, in this order:
+      1. a one line result naming the round (round 1 of at most 5), the
+         outcome (not done) and counts of findings by severity;
+      2. the criteria, CODE-1 marked failed with a short reason;
+      3. every finding on its own with a number (#1, #2, ... or 1., 2., ...),
+         its place (file and function), what is wrong and its evidence; the
+         two CODE-1 places are two separate findings, not one summary line;
+      4. what happens next (what the user has to decide, what is to be fixed,
+         when the next round runs).
+      If the reply asks the user anything about the findings, every such
+      question comes after the list and names the findings by number. FAIL
+      if a question about the findings comes before the list, or asks how to
+      record "the findings" without naming them, or offers only a bulk
+      option such as "fix all".
