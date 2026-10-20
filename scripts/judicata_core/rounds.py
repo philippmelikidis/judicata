@@ -62,6 +62,7 @@ from . import (
     contract,
     findings,
     ledger,
+    names,
     narrow,
     revision,
     states,
@@ -1014,7 +1015,7 @@ def _require_recorded(project: Project, current: contract.Contract) -> None:
             "contract_edited",
             f"contract {current.name!r} was edited by hand and differs from its "
             f"recorded version {latest.get('version')}; record the change through "
-            "/judicata:contract or restore the file",
+            f"{names.skill('contract')} or restore the file",
             {
                 "contract": current.name,
                 "file": current.file,

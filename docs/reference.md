@@ -183,17 +183,26 @@ npx skills@latest add philippmelikidis/judicata --skill '*' -a <agent>
 
 `-a` names the agent (for example `opencode` or `cursor`; leave it out to choose), `-g`
 installs for all your projects instead of the current one. The installer copies
-`skills/review`, `skills/contract` and `skills/status` from this repository (OpenCode, for
-example, reads them from `.agents/skills/`). The review skill carries a copy of the core in
-`core/` (the command line, the templates and the reviewer instructions), and the other two
-skills use it, so install all three. Update with `npx skills@latest update`. In Claude Code
-and Codex use the plugin instead: the plugin gets everything below, and a second install
-would give you every skill twice.
+`judicata-review`, `judicata-contract` and `judicata-status` from `.agents/skills/` in this
+repository (OpenCode, for example, reads them from `.agents/skills/` in your project). They
+are generated from the plugin's skills and differ only in their names and in how they refer
+to each other; the plugin's own skills are marked internal and the installer skips them.
+`judicata-review` carries a copy of the core in `core/` (the command line, the templates and
+the reviewer instructions), and the other two skills use it, so install all three. Update
+with `npx skills@latest update`. In Claude Code and Codex use the plugin instead: the plugin
+gets everything below, and a second install would give you every skill twice under two
+names.
 
-Ask in plain words as in Claude Code, or call the skills the way your agent does (their
-names are plain `review`, `contract` and `status`, without the `judicata:` prefix; another
-skill or command with the same name in your agent can shadow them). What a plain install
-does not have:
+If your installer does not know the internal mark and offers six skills, pick the three
+prefixed ones:
+
+```bash
+npx skills@latest add philippmelikidis/judicata --skill judicata-review --skill judicata-contract --skill judicata-status
+```
+
+Ask in plain words as in Claude Code, or call the skills the way your agent does
+(`judicata-review`, `judicata-contract`, `judicata-status`; the prefix keeps them apart from
+your agent's own commands and other skills). What a plain install does not have:
 
 - **No session hook.** Plain skills cannot ship hooks, so a new session does not start with
   the summary of the ledger, and a chat that is not running a judicata skill does not know
@@ -260,9 +269,15 @@ uv run --with pytest==9.1.1 pytest
 
 The tests drive the core command line. `skills/review/core/` is a copy of `scripts/`,
 `templates/`, `agents/reviewer.md` and `LICENSE` for installs as plain skills (an install
-copies only the skill folders). Never edit it by hand: after changing the source run
-`python3 tools/bundle_core.py`; the tests and CI fail while the copy differs
-(`python3 tools/bundle_core.py --check` lists the differences). The behavior of the plugin in Claude Code (skills,
+copies only the skill folders), and `.agents/skills/judicata-*/` holds the skills of
+`skills/` under their prefixed names, each with the same files (the review copy with the
+core). Never edit the copies by hand: after changing the source run
+`python3 tools/bundle_core.py`; the tests and CI fail while a copy differs
+(`python3 tools/bundle_core.py --check` lists the differences). Every plugin skill keeps
+`metadata:` / `internal: true` in its frontmatter (hides it from `npx skills`), and the
+repository root has no `skills-lock.json` (the installer would take the copies as installed);
+the tool checks both. When Codex runs inside this repository it also lists the copies as
+repository skills; users do not see them. The behavior of the plugin in Claude Code (skills,
 reviewer agent, hook) is checked by five acceptance evals in `evals/`, run with
 `claude plugin eval` against the plugin and, as a baseline, against Claude without it:
 

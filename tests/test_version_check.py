@@ -99,6 +99,15 @@ def test_shipped_change_without_version_or_unreleased_entry_fails(tmp_path):
     assert "0.1.0" in result.stdout
 
 
+def test_a_change_to_the_prefixed_skill_copies_ships_too(tmp_path):
+    root = released(tmp_path)
+    write(root, ".agents/skills/judicata-review/SKILL.md", "new\n")
+    commit(root)
+    result = check(root)
+    assert result.returncode == 1
+    assert ".agents/skills/judicata-review/SKILL.md" in result.stdout
+
+
 def test_shipped_change_with_unreleased_entry_passes(tmp_path):
     root = released(tmp_path)
     write(root, "scripts/core.py", "print(2)\n")
