@@ -18,9 +18,10 @@ round report --round R answers, in this order:
             summary (what is wrong), evidence (scenario, quote, hit or output),
             reviewers {saw, of: planned runs, answered: valid answers} (None for
             deterministic checks and earlier findings), consensus,
-            verification (verified, refuted, inconclusive, unverified: over the
-            limit, discarded, not_run, None: not a candidate) with
-            verifier_reason, history {status new|still_open|came_back|earlier,
+            confirmed, verification (verified, refuted, inconclusive, unverified:
+            over the limit, discarded, not_run, None: not a candidate) with
+            verifier_reason and verifier_reused (the earlier round whose verdict
+            holds), history {status new|still_open|came_back|earlier,
             why fix_not_confirmed|place_changed|closed_before|criterion_changed,
             rounds_seen}, state, decision, previous_decision, needs_decision
             (the round cannot close without it), to_decide (the user is asked),
@@ -257,6 +258,7 @@ def _finding(current, seen: dict, prior: dict, entry: dict, number: int) -> dict
         "severity": entry.get("severity"),
         "blocking": bool(entry.get("blocking")),
         "consensus": entry.get("consensus"),
+        "confirmed": bool(entry.get("confirmed")),
         "place": {
             "file": clean(entry.get("file"), LABEL) or None,
             "line": entry.get("line"),
@@ -271,6 +273,10 @@ def _finding(current, seen: dict, prior: dict, entry: dict, number: int) -> dict
         "verification": _verification(current, seen, entry),
         "verifier_reason": clean(
             (entry.get("verification") or {}).get("reason"), EVIDENCE
+        )
+        or None,
+        "verifier_reused": clean(
+            ((entry.get("verification") or {}).get("reused") or {}).get("round"), 80
         )
         or None,
         "history": _history(prior, seen["found"], current, entry),

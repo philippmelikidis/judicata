@@ -93,9 +93,11 @@ survives moved lines: the class and function around the line in Python, the head
 paragraph number in Markdown, the symbol name in other languages, else the file. Only a
 correctness, security or factual finding with a concrete scenario can be a blocker; everything
 else is at most a note. A finding counts when both reviewers report it at the same address in
-the same category. A blocker only one of them sees is shown as unconfirmed.
+the same category. A blocker only one of them sees is unconfirmed: the verifier decides it
+first (verified, it counts like a confirmed blocker; refuted, it becomes a note), and only if
+the verifier cannot decide are you asked.
 
-Before a confirmed blocker from a judgment criterion or outside the contract holds up "done", a
+Before a blocker from a judgment criterion or outside the contract holds up "done", a
 verifier tries to refute it: one short run per blocker in a fresh context, with read tools only
 and nothing but that blocker, its place, the reviewers' evidence and the results of the
 contract's approved commands from this round (the verifier runs no command itself). Its verdict
@@ -104,10 +106,16 @@ counts only with concrete counter-evidence the core checks: a quote from a file 
 handles the case, or a passing approved command with a line of its output; otherwise it is
 recorded as inconclusive. A refuted blocker becomes a note with the verifier's reason, and you
 can reopen it ("the verifier is wrong"); later rounds then do not verify it again while its
-place is unchanged. Command and pattern criteria are never verified. At most `max_runs`
-blockers per round are verified (default 5), most severe first; the rest stay blockers and the
-report names them. A blocker a later round sees again is verified again. Where the host has no
-sub-agents, the session verifies itself and the report says it was not independent.
+place is unchanged. Command and pattern criteria are never verified. A verdict is stored per
+finding and place: a later round that sees the blocker at the same place (and, for a criterion,
+with the same criterion text) reuses it without a new run; a refutation only while its
+counter-evidence still holds. A changed place or criterion gets a new run. At most `max_runs`
+new runs per round (default 5), most severe first; the rest stay blockers. In an interactive
+run the report says "N of M blockers verified" and asks once whether to verify the rest
+(default no). In block mode (`[stop] gate = "block"` or the environment variable
+`JUDICATA_GATE=block` for unattended runs, which overrides the contract) it never asks and
+lists the unverified blockers. Where the host has no sub-agents, the session verifies itself
+and the report says it was not independent.
 
 Before judicata asks you anything about a round, it shows the whole round (`round report`): one
 line with the round of the pass, the outcome, the findings by severity and the open blockers

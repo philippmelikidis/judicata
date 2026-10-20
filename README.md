@@ -68,8 +68,8 @@ What each install gets:
 | Stop gate, warn: a one-line warning when a turn ends with open blockers or unreviewed changes ([details](docs/reference.md#stop-gate)) | yes | yes, once you trusted the hook | no hooks: the skills tell the agent to check the status before it says done and to name what is open |
 | Stop gate, block: the agent may not end its turn then (`gate = "block"` or `JUDICATA_GATE=block`) | yes | yes, once you trusted the hook | no hooks: the same rule in the skills, an instruction only |
 | Independent reviewers in a fresh context | sub-agents with read-only tools | sub-agents, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents one reviewer, the session itself, and the report says so |
-| Reviewer with an invalid answer sent back once with the exact schema error (hook) | yes | no: the core rejects it and the skill asks the reviewer once more | no: the same core check |
-| Verifier for confirmed blockers | sub-agent with read-only tools | sub-agent, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents the session verifies itself, and the report says it was not independent |
+| Reviewer or verifier with an invalid answer sent back once with the exact schema error (hook) | yes | no: the core rejects it and the skill asks the reviewer once more | no: the same core check |
+| Verifier for blockers | sub-agent with read-only tools | sub-agent, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents the session verifies itself, and the report says it was not independent |
 | Questions | answer buttons | numbered list | the agent's question tool, or a numbered list |
 | Skills | `/judicata:review`, `/judicata:contract`, `/judicata:status` | `judicata:review`, ... | `judicata-review`, `judicata-contract`, `judicata-status` |
 
@@ -169,16 +169,18 @@ flowchart LR
 
 - **Reviewers** run in parallel, each with a fresh context and only read tools, by default on
   the model of your chat. They do not see each other. With two reviewers, a finding counts when both
-  report it, and a blocker only one of them sees is shown to you as unconfirmed. With one
+  report it, and a blocker only one of them sees goes to the verifier first: you are asked
+  about it only if the verifier cannot decide. With one
   reviewer (your choice, or a contract without judgment criteria), its findings count directly. Want something else? Say "only
   one reviewer" or "use Opus and Sonnet".
 - **Blockers need evidence.** Outside the contract, only a correctness, security or factual
   finding with a concrete scenario can block. Everything else is at most a note. Every quote a
   reviewer cites must read exactly at the cited file and line, so no reviewer can invent one.
   finding with a concrete scenario can block. Everything else is at most a note.
-- **Blockers are challenged.** A verifier tries to refute every confirmed blocker from a
-  judgment criterion or outside the contract, one short read-only run each (at most 5 per
-  round). A blocker it refutes with concrete counter-evidence becomes a note you can reopen.
+- **Blockers are challenged.** A verifier tries to refute every blocker from a judgment
+  criterion or outside the contract, one short read-only run each (at most 5 per round, more
+  only if you say yes). A blocker it refutes with concrete counter-evidence becomes a note you
+  can reopen. Its verdict holds in later rounds while the place is unchanged.
 - **You see the round before you decide.** Before any question, judicata shows the result in
   one line, every criterion and every finding on its own with a number, place, evidence and
   whether it is new or came back, and what happens next. Each question names its findings by
@@ -237,8 +239,11 @@ files: if two branches change the same contract, Git asks you to resolve it as u
 Command and pattern criteria need no model: a script runs them. The review itself runs in your
 chat (it calls the core and reports the result), plus one sub-agent per reviewer on your chat's
 model, two by default. A contract with only command and pattern criteria still plans one
-reviewer, for findings outside the contract. Each confirmed blocker from a judgment or a
-reviewer finding gets one short verifier run (at most 5 per round, `[verifier] max_runs`).
+reviewer, for findings outside the contract. Each blocker from a judgment or a reviewer
+finding gets one short verifier run (at most 5 per round, `[verifier] max_runs`), once: while
+its place is unchanged, later rounds reuse the verdict. Over the limit judicata asks once
+whether to verify the rest (default no); with `JUDICATA_GATE=block` or `gate = "block"` it
+never asks and lists them.
 
 </details>
 
