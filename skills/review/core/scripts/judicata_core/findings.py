@@ -170,8 +170,13 @@ def file_place(relative: str, text: str) -> dict:
     }
 
 
+PLACED = ("pattern", "references")  # check kinds whose failures carry places
+
+
 def pattern_places(project, evidence: dict, whole: dict) -> list[dict]:
-    """Places of a failed pattern criterion, read from the files right after the check."""
+    """Places of a failed pattern or references criterion, read from the files
+    right after the check: forbid hits and broken references at their line,
+    the other rules and unreadable files as the whole file."""
     locators: dict[str, address.Locator] = {}
 
     def locator(relative: str) -> address.Locator:
@@ -190,7 +195,10 @@ def pattern_places(project, evidence: dict, whole: dict) -> list[dict]:
     rule = evidence.get("rule")
     places, truncated = [], False
     hits = evidence.get("hits", [])
-    if rule == "forbid":
+    if "broken" in evidence:  # references
+        hits = evidence["broken"]
+        truncated |= evidence.get("broken_count", 0) > len(hits)
+    if rule == "forbid" or "broken" in evidence:
         places += [
             {**locator(h["file"]).at(h["line"]), "file": h["file"], "line": h["line"]}
             for h in hits
@@ -219,7 +227,7 @@ def criterion_findings(contract_name: str, criterion: dict, data: dict, whole: d
             if verdict["passed"] is False
             for place in verdict.get("places", [])
         ]
-    elif data["check"] == "pattern":
+    elif data["check"] in PLACED:
         places = data.get("places") or []
     else:
         places = []

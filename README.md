@@ -111,6 +111,7 @@ criteria, each required or optional, each with a fixed check:
 | --- | --- | --- |
 | **command** | "Tests pass": `pytest -q` exits 0 | a script, same result every time |
 | **pattern** | "At most 400 words", "no em dashes" | a script, same result every time |
+| **references** | "Every link, anchor, image and citation key exists" | a script, same result every time |
 | **judgment** | "Every claim has a source" | two independent reviewers; if they disagree, you decide once |
 
 After the interview the contract is frozen. It changes only when you ask
@@ -149,7 +150,7 @@ Some loops find a new nit forever. Others call it "done" while a required check 
 ```mermaid
 flowchart LR
     A["You: 'review this'"] --> B["Contract<br/>frozen criteria"]
-    B --> C["Script checks<br/>command + pattern"]
+    B --> C["Script checks<br/>command, pattern, references"]
     B --> D["2 reviewers<br/>fresh context, read-only"]
     C --> E["Ledger<br/>.judicata/ledger.jsonl"]
     D --> E
@@ -216,10 +217,10 @@ files: if two branches change the same contract, Git asks you to resolve it as u
 <details>
 <summary><strong>What does a review cost?</strong></summary>
 
-Command and pattern criteria need no model: a script runs them. The review itself runs in your
-chat (it calls the core and reports the result), plus one sub-agent per reviewer on your chat's
-model, two by default. A contract with only command and pattern criteria still plans one
-reviewer, for findings outside the contract.
+Command, pattern and references criteria need no model: a script runs them. The review itself
+runs in your chat (it calls the core and reports the result), plus one sub-agent per reviewer on
+your chat's model, two by default. A contract with only such criteria still plans one reviewer,
+for findings outside the contract.
 
 </details>
 

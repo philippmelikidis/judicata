@@ -54,7 +54,7 @@ or an unconfirmed one the user confirmed (fix or accept).
 
 from dataclasses import dataclass, field
 
-from . import assignment, scope, untrusted
+from . import assignment, findings, scope, untrusted
 
 ROUND_STARTED = "round_started"
 FINDING_RECORDED = "finding_recorded"
@@ -352,7 +352,7 @@ def looked(current_round, info: dict) -> bool:
             return True
         places = result.get("places")
         return (
-            result.get("check") == "pattern"
+            result.get("check") in findings.PLACED
             and bool(places)
             and all(p["address"].get("kind") != "scope" for p in places)
         )

@@ -6,7 +6,8 @@ version users get: Claude Code updates the plugin only when it goes up.
 
 ## [Unreleased]
 
-- Contract format 0.2: `[stop] gate` (`warn` by default, or `block`), a `[verifier]` table with `model` (default `inherit`) and `max_runs` (default 5), and the check kind `references` with `code_paths` (default off). Contracts from 0.1 load unchanged, keep their recorded version and get the defaults; `contract show` and the interview show the new fields. Until the references check ships, references criteria stay pending with that reason.
+- Contract format 0.2: `[stop] gate` (`warn` by default, or `block`), a `[verifier]` table with `model` (default `inherit`) and `max_runs` (default 5), and the check kind `references` with `code_paths` (default off). Contracts from 0.1 load unchanged, keep their recorded version and get the defaults; `contract show` and the interview show the new fields.
+- References check: a `references` criterion checks without a model that relative Markdown links, anchors (GitHub heading slugs), images and citation keys (`[@key]`, `\cite{key}` against the `.bib` files of the project) exist; external URLs are ignored, code blocks and inline code are not read as links. With `code_paths = true` inline code spans that are a path with a slash and a file extension are checked relative to the project root. Each broken reference is reported with file, line, reference and reason. The docs template proposes it with `code_paths`, the prose template without.
 
 ## [0.1.0] - 2026-10-19
 

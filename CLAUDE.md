@@ -57,8 +57,18 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   check kinds also have `run(project, criterion, scope) -> {"passed", "evidence"}`. Without `run` a criterion stays
   `pending` (`PENDING_REASON`). Status: `command` runs (shell in the project folder, its own process group,
   `timeout` default 300 s, last 20 lines of stdout+stderr as `evidence.output_tail`); `judgment` is only validated;
-  `references` (`code_paths`, default false) is only validated so far and stays pending with its reason (#11 adds
-  `run`), reviewers never judge it.
+  `references` runs (#11, `code_paths` default false), reviewers never judge it: Markdown files in scope (`MARKDOWN`
+  suffixes) give links, reference definitions, `<a href>`, images, `<img src>`, `[@key]` and `\cite{}`; LaTeX files
+  only `\cite{}` (comments, verbatim skipped). Code blocks (fenced, indented outside lists), inline code, HTML
+  comments and backslash escapes are blanked out first (offsets kept). Targets relative to the linking file (`/` =
+  root), exact spelling per path segment (`os.listdir`), `..` outside the root is broken; anchors only into Markdown
+  targets, against GitHub slugs (`slug()`, repeats `-1`) plus HTML `id`/`name`, also lowercased; keys from every
+  `.bib` in `scope.candidates` (`bib_keys`, @comment/@string/@preamble skipped). `code_paths`: a span without
+  whitespace with a `/` and an extension, relative to the root. External = any scheme or `//`. Same child process as
+  `pattern` (fixed `TIMEOUT` 60 s, no contract field). Evidence `broken` [{file, line, column, kind
+  link|image|citation|code_path, reference, target, reason}] sorted per file, `broken_count`, `unreadable` (fails),
+  `files_checked`, `references_checked`; empty scope fails, no Markdown/LaTeX file passes with `note`. Failed
+  patterns and references get `places` (`findings.PLACED`, `pattern_places`: broken references at their line).
   `pattern` runs: one rule per criterion (`forbid`/`require` as a Python regex with MULTILINE, `max_words`,
   `max_lines`), every rule applies per file, evaluated in a child process (spawn) with `timeout` (default 60 s,
   against backtracking). Evidence `evidence.hits` [{file, line, column, text}], for `require` also `missing`, for
