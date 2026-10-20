@@ -377,22 +377,27 @@ plain skills there are no hooks, so this rule is the only gate.
    judicata never fixes anything: "fix" only records that the user will fix it, and the next
    round confirms it.
 
-   Verifiers try to refute every confirmed blocker from a judgment criterion or outside the
-   contract before it holds up "done" (command and pattern criteria are facts, the core
-   never plans them). Plan them once step 7 is finished:
+   Verifiers try to refute every blocker from a judgment criterion or outside the contract
+   before it holds up "done", also an unconfirmed one (only one reviewer saw it): it goes to
+   the verifier before the user (command and pattern criteria are facts, the core never
+   plans them). Plan them once step 7 is finished:
 
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" verify plan --project <dir> --round <round>
    ```
 
    The answer has `runs` (one blocker each, most severe first, at most `max_runs`; each with
-   `run`, `model`, `blocker` and `verifier_data`), `unverified` (blockers over the limit:
-   they stay blockers), `candidates`, `paths`, `exclude`, `commands` (the approved commands
-   that ran in step 3), `warnings` and `output_schema`. Empty `runs`: nothing to verify, go
-   on with `finding list`. If `warnings` is not empty, tell the user each `message` in one
-   line before the verifiers start.
+   `run`, `model`, `status`, `blocker` and `verifier_data`), `reused` (blockers whose verdict
+   from an earlier round still holds because their place and criterion are unchanged: no
+   run needed), `unverified` (blockers over the limit: they stay blockers), `ask_more`,
+   `gate`, `candidates`, `paths`, `exclude`, `commands` (the approved commands that ran in
+   step 3), `warnings` and `output_schema`. No run with `status` `waiting` and
+   `ask_more` false: nothing to verify, go on with `finding list` (with `ask_more` true go
+   to the question over the limit below, also when every run is already submitted). If `warnings` is not empty, tell the user each
+   `message` in one line before the verifiers start.
 
-   Start one `judicata:verifier` agent per run, all in a single message, like the reviewers
+   Start one `judicata:verifier` agent per run with `status` `waiting`, all in a single
+   message, like the reviewers
    (for `model` `inherit` leave the model unset, otherwise pass the run's model). Each gets
    exactly this task and nothing else:
 
@@ -419,6 +424,17 @@ plain skills there are no hooks, so this rule is the only gate.
    `verdict`: `refuted` only with counter-evidence it checked (`downgraded` says why a
    refutation became `inconclusive`). Never argue with a verdict and never submit your own.
 
+   Over the limit (`unverified` not empty): if `ask_more` is true and a user can answer in
+   this conversation, say "N of M blockers verified" (N = verdicts so far including `reused`,
+   M = `candidates`) and ask once with AskUserQuestion "Verify the other K blockers too? Each
+   is one more verifier run." with the options, in this order: "No" (the default: they stay
+   blockers without a verification) and "Yes, verify them". Only on "Yes, verify them" run
+   `verify more --project <dir> --round <round>`: it answers like `verify plan`, start a
+   verifier for every run with `status` `waiting` and submit their answers as above. If
+   `ask_more` is false (`gate.mode` is `block`: an unattended run or a contract that blocks)
+   or nobody can answer (a non-interactive run), never ask: the report lists the
+   unverified blockers. Ask this question at most once per round.
+
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" finding list --project <dir> --round <round>
    ```
@@ -429,8 +445,11 @@ plain skills there are no hooks, so this rule is the only gate.
    `state` and, if decided before, `decision`. The core sets the severity: only correctness,
    security or factual findings with a concrete scenario can be blockers, everything else
    outside the contract is at most a note. `consensus` `confirmed`: several reviewers report
-   the same place and category; `unconfirmed`: a blocker only one reviewer reports
-   (`needs_decision` true, the round cannot close until the user decided it).
+   the same place and category; `unconfirmed`: a blocker only one reviewer reports. A
+   verifier decides an unconfirmed blocker first: verified, it blocks like a confirmed one
+   (`confirmed` true); refuted, it is a note. Only when the verifier could not decide
+   (inconclusive, discarded or unverified) is `needs_decision` true, and the round cannot
+   close until the user decided it.
 
    Ask about every finding with `state` `open` that is a blocker or should-fix, and every one
    in `decisions_needed`. Leave notes for the report, unless the user asks to decide them.
@@ -440,6 +459,8 @@ plain skills there are no hooks, so this rule is the only gate.
    <round> --fingerprint <fingerprint> --reason "<one line>"`; it blocks again, and later
    rounds do not verify it again while its place is unchanged. `verification.verdict`
    `verified` marks a blocker that survived the challenge: say so in its question.
+   `verification.reused` names the earlier round whose verdict still holds at the
+   unchanged place; reopen such a refutation with `--round <round>` of this round.
    The core already left out findings the user rejected or accepted earlier at a place that has
    not changed since: they are in `suppressed`, never ask about them and never raise them
    yourself. A finding with `presentation` `represented` was rejected or accepted earlier, but
@@ -450,8 +471,11 @@ plain skills there are no hooks, so this rule is the only gate.
    record their decision with `--round <last_round>` of each entry.
    - One AskUserQuestion call holds at most four findings, one question each, blockers first.
      The question names the `label`, the `summary` (for criterion findings the criterion id
-     and text) and the evidence in one line; mark unconfirmed ones with "(unconfirmed, only
-     one reviewer saw it)". A finding with `warnings` starts with their `message` and shows
+     and text) and the evidence in one line; mark unconfirmed ones (`consensus`
+     `unconfirmed` and `confirmed` false) with "(unconfirmed, only one reviewer saw it)", and
+     add "the verifier could not decide" if it has an `inconclusive` verdict. An unconfirmed
+     blocker the verifier verified has `confirmed` true: ask about it like any confirmed
+     blocker, without that mark. A finding with `warnings` starts with their `message` and shows
      the flagged fields only as their cleaned `text`. Options, in this order: "Fix" (the
      user fixes it; no reason needed), "Reject" (the finding is wrong), "Accept risk" (it is
      real, the user lives with it). Do not mark any option as recommended. For a finding of
@@ -507,7 +531,8 @@ plain skills there are no hooks, so this rule is the only gate.
    should-fix findings that do not block because the user rejected or accepted them, each
    with its reason), `refuted` (failed criteria whose every open place a verifier refuted:
    they do not block), `verification` (`verified`, `refuted`, `inconclusive`, `discarded`,
-   `unverified`, `candidates`, `planned`, `independent`), `outcome_label` and `stop`.
+   `unverified`, `reused`, `candidates`, `planned`, `independent`), `outcome_label` and
+   `stop`.
 
    `outcome` follows the contract's stop rule. Rounds count per contract and scope within a
    pass: `stop.round_in_pass` of at most `stop.max_rounds`, `stop.open_blockers_per_round`
@@ -592,11 +617,15 @@ plain skills there are no hooks, so this rule is the only gate.
      of `transitions` (closed, or open again after a fix). If `suppressed` has entries, say
      in one line how many earlier decisions held at unchanged places (no list).
    - Name every run in `reviewers.discarded` with its model and reason.
-   - Verification: "N of M blockers verified" (M = `verification.candidates`), then each
+   - Verification: "N of M blockers verified" (N = the entries of `verified`, `refuted` and
+     `inconclusive`, M = `verification.candidates`); if `verification.reused` is not 0, say
+     that many verdicts came from earlier rounds at unchanged places. Then each
      refuted blocker as a note with its `label`, the verifier's `reason` and its
      counter-evidence (`file:line` with `quote`, or the command and the output line), and that
      the user can reopen it; verified and inconclusive ones by label. The entries of
-     `verification.unverified` stay blockers without a verification: name them by label.
+     `verification.unverified` stay blockers without a verification: name each by label,
+     and say whether the user declined to verify them or the run could not ask (block mode
+     or unattended).
      Name every run in `verification.discarded` with its reason. If `verification.independent`
      is false, say that the verification ran in this session and was not independent.
    - Every entry with `warnings`, also from the plan: its `message`, once, with the cleaned

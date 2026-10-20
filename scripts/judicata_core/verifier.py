@@ -13,6 +13,7 @@ such a passing command with a line of its output, or quote a file in scope.
 """
 
 import json
+import os
 import uuid
 from pathlib import Path
 
@@ -34,6 +35,16 @@ from .scope import Scope
 SCHEMA_FILE = Path(__file__).with_name("verifier_output.schema.json")
 OUTPUT_LIMIT = 2000  # characters of a command's output in the task
 MAX_STORED_PROBLEMS = 20
+GATE_ENV = "JUDICATA_GATE"  # warn or block for this run, over the contract's gate
+
+
+def gate(current: contract.Contract) -> dict:
+    """The gate mode of this run: JUDICATA_GATE if set to warn or block (an
+    unattended run sets block), else the contract's [stop] gate."""
+    value = os.environ.get(GATE_ENV, "").strip().lower()
+    if value in contract.GATES:
+        return {"mode": value, "source": GATE_ENV}
+    return {"mode": current.stop["gate"], "source": "contract"}
 
 
 def output_schema() -> dict:
@@ -73,6 +84,18 @@ def plan(project: Project, round_id: str) -> dict:
             round_id,
             verification.reopened(events),
         )
+        again, fresh = [], []
+        for entry in chosen:
+            previous = verification.earlier(all_rounds, current.name, entry, round_id)
+            if previous is not None and _holds(project, current_round, previous):
+                again.append(
+                    {
+                        **verification.brief(entry),
+                        "verification": verification.stored(previous),
+                    }
+                )
+            else:
+                fresh.append(entry)
         limit, model = current.verifier["max_runs"], current.verifier["model"]
         stored = {
             "round": round_id,
@@ -82,12 +105,14 @@ def plan(project: Project, round_id: str) -> dict:
             "candidates": len(chosen),
             "runs": [
                 {"run": uuid.uuid4().hex, "model": model, **verification.brief(e)}
-                for e in chosen[:limit]
+                for e in fresh[:limit]
             ],
-            "unverified": [verification.brief(e) for e in chosen[limit:]],
+            "reused": again,
+            "unverified": [verification.brief(e) for e in fresh[limit:]],
         }
         ledger.append(project, verification.VERIFIERS_PLANNED, stored)
         current_round.verifier_plan = stored
+        current_round.reused = verification.reused(stored)
     commands, warnings = _commands(current_round, assessed["results"])
     by_fingerprint = {e["fingerprint"]: e for e in assessed["candidates"]}
     status = {s["run"]: s["status"] for s in verification.run_states(current_round)}
@@ -107,13 +132,29 @@ def plan(project: Project, round_id: str) -> dict:
                 "warnings": found,
             }
         )
+    mode = gate(current)
     return {
         "round": round_id,
         "contract": current.name,
+        "gate": mode,
+        # over the limit: ask the user once whether to verify the rest (default
+        # no), only when someone can answer (never in block mode)
+        "ask_more": bool(stored["unverified"]) and mode["mode"] == "warn",
         "model": untrusted.clean(stored["model"], 100),
         "max_runs": stored["max_runs"],
         "candidates": stored["candidates"],
         "runs": runs,
+        "reused": [
+            untrusted.shown(
+                {
+                    **verification.brief(entry),
+                    "verification": verification.public(
+                        current_round.reused.get(entry["fingerprint"])
+                    ),
+                }
+            )
+            for entry in stored.get("reused") or []
+        ],
         "unverified": [untrusted.shown(u) for u in stored["unverified"]],
         "unverified_count": len(stored["unverified"]),
         "paths": [untrusted.clean(p, 300) for p in current_round.plan["paths"] or []],
@@ -122,6 +163,36 @@ def plan(project: Project, round_id: str) -> dict:
         "warnings": warnings,
         "output_schema": output_schema(),
     }
+
+
+def more(project: Project, round_id: str) -> dict:
+    """The user asked to verify the blockers over the limit: one run each."""
+    current_round = rounds.open_round(project, round_id)
+    current = contract.select(project, current_round.contract)
+    if current.hash != current_round.contract_hash:
+        raise rounds.contract_changed(round_id, current.name)
+    stored = current_round.verifier_plan
+    if stored is None:
+        raise JudicataError(
+            "not_planned",
+            "no verifiers planned for this round, run verify plan first",
+            {"round": round_id},
+        )
+    if not stored["unverified"]:
+        raise JudicataError(
+            "nothing_unverified",
+            "every blocker of this round already has a verifier run or a verdict",
+            {"round": round_id},
+        )
+    model = current.verifier["model"]
+    added = [
+        {"run": uuid.uuid4().hex, "model": model, **verification.brief(entry)}
+        for entry in stored["unverified"]
+    ]
+    ledger.append(
+        project, verification.VERIFIERS_ADDED, {"round": round_id, "runs": added}
+    )
+    return {**plan(project, round_id), "added": [r["run"] for r in added]}
 
 
 def _commands(current_round: rounds.Round, results: dict) -> tuple[list, list]:
@@ -299,6 +370,7 @@ def submit(
         "contract": current_round.contract,
         "fingerprint": run["fingerprint"],
         "section_hash": run.get("section_hash"),
+        "criterion_hash": run.get("criterion_hash"),
         "severity": run.get("severity"),
         "verdict": verdict,
         "claimed": claimed,
@@ -325,6 +397,25 @@ def submit(
             s["run"] for s in verification.run_states(after) if s["status"] == "waiting"
         ],
     }
+
+
+def _holds(project: Project, current_round, verdict: dict) -> bool:
+    """Whether an earlier verdict still stands for this round: a refutation
+    only while every piece of its counter-evidence still checks out (a guard
+    elsewhere in scope can be gone although the blocker's place is unchanged)."""
+    if verdict.get("verdict") != "refuted":
+        return True
+    evidence = verdict.get("counter_evidence") or []
+    for item in evidence:
+        if item.get("kind") != "command":
+            continue
+        result = current_round.results.get(item.get("criterion")) or {}
+        if (result.get("evidence") or {}).get("command") != item.get("command"):
+            return False  # the criterion runs another command now
+    kept, dropped = _counter_evidence(
+        project, current_round, {"counter_evidence": evidence}
+    )
+    return bool(kept) and not dropped
 
 
 def _counter_evidence(project: Project, current_round, raw: dict):
@@ -458,7 +549,7 @@ def reopen(project: Project, round_id: str, fingerprint: str, reason: str) -> di
         )
     verdict = next(
         (v for v in current_round.verdicts.values() if v["fingerprint"] == fingerprint),
-        None,
+        current_round.reused.get(fingerprint),
     )
     if verdict is None or not verification.refuted(verdict):
         raise JudicataError(

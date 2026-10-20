@@ -36,9 +36,12 @@ the artifact before the fix (two open rounds, merged branches).
 rejected and accepted form the register of accepted risks.
 
 Verification (verification.py): a verifier_verdict belongs to one round and
-fingerprint; the round's finding_recorded attaches it (verification). A refuted
+fingerprint; the round's finding_recorded attaches it (verification), also an
+earlier verdict the round's verifiers_planned reuses (marked reused). A refuted
 one makes the finding a note while it stands: not blocking, severity note. A
-later round that records the finding again starts without a verdict. A
+verified one confirms an unconfirmed finding while it is the latest round's
+verdict (Finding.settled), not for good. A later round that records the
+finding again without a verdict of its own starts without one. A
 verdict_reopened (the user disagrees) gives the finding its severity back.
 
 Presentation of a sighting of a rejected or accepted finding (per round, set
@@ -55,7 +58,8 @@ own decisions):
 
 A finding is blocking while it is open or resolved, its severity is blocker and
 it is confirmed: a criterion finding, a confirmed finding, the only reviewer's,
-or an unconfirmed one the user confirmed (fix or accept).
+an unconfirmed one the user confirmed (fix or accept), or one the verifier
+verified in the latest round that recorded it.
 """
 
 from dataclasses import dataclass, field
@@ -109,11 +113,17 @@ class Finding:
     verification: dict | None = None  # the verifier's verdict of the latest round
 
     @property
+    def settled(self) -> bool:
+        """Confirmed for good (consensus or the user), or by the verifier's
+        verified verdict of the latest round (that one only while it stands)."""
+        return self.confirmed or (self.verification or {}).get("verdict") == "verified"
+
+    @property
     def blocking(self) -> bool:
         return (
             self.state in LIVE
             and self.info.get("severity") == "blocker"
-            and self.confirmed
+            and self.settled
         )
 
     def move(self, to: str, round_id: str, why: str, at: int) -> None:
@@ -131,7 +141,7 @@ class Finding:
             **{key: self.info.get(key) for key in FIELDS},
             "state": self.state,
             "blocking": self.blocking,
-            "confirmed": self.confirmed,
+            "confirmed": self.settled,
             "decision": public_decision(self.decision),
             "rounds_seen": len(self.rounds),
             "last_round": self.rounds[-1] if self.rounds else None,
@@ -175,6 +185,10 @@ def replay(events: list[dict], all_rounds: dict) -> dict[tuple[str, str], Findin
         data = event["data"]
         if event["type"] == ROUND_STARTED:
             started[event["id"]] = seq
+        elif event["type"] == verification.VERIFIERS_PLANNED:
+            for fingerprint, verdict in verification.reused(data).items():
+                key = (data.get("round"), data.get("contract"), fingerprint)
+                verdicts.setdefault(key, verdict)
         elif event["type"] in (
             verification.VERIFIER_VERDICT,
             verification.VERDICT_REOPENED,

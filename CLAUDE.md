@@ -269,18 +269,29 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `criterion_result` (`evidence` = consensus, verdicts, decision). File hash instead of section hash on purpose: a
   judgment criterion applies to the whole scope.
 
-- `verification.py` and `verifier.py` (group `verify`, #14): a verifier tries to refute each confirmed blocker
+- `verification.py` and `verifier.py` (group `verify`, #14, #16): a verifier tries to refute each blocker
   from a judgment before it holds up done. `verification.py` (pure, used by `states` and `rounds`): `select()` =
   open blockers of the round's candidates (`rounds.with_state` before close) that are criterion findings of a
   required judgment criterion with consensus `single`/`agreed` (not decided by the user) or reviewer findings with
-  consensus `single_reviewer`/`confirmed`; never command or pattern criteria, nothing decided in this round, no
-  suppressed or represented finding, nothing the user reopened at the same section hash (`reopened()`).
-  Unconfirmed blockers would join in `select()` (#16). Order: criterion findings, then security, correctness,
-  factual, then more sightings, label, fingerprint. `verify plan --round R` (reviewer runs complete, otherwise
+  consensus `single_reviewer`/`confirmed`/`unconfirmed`; never command or pattern criteria, nothing decided in
+  this round, no suppressed or represented finding, nothing the user reopened at the same section hash
+  (`reopened()`). Order: criterion findings, then security, correctness, factual, then more sightings, label,
+  fingerprint. Unconfirmed (#16): a `verified` verdict of the latest recording round confirms it (`Finding.settled`,
+  not sticky like `confirmed`), refuted = note, so `needs_decision` stays only for inconclusive, discarded or unverified ones. Reuse (#16):
+  `verification.earlier()` = the latest verdict of another round with the same contract, fingerprint and section
+  hash (criterion findings also `criterion_hash`, stored in the verdict since #16; never a reopened one);
+  `verify plan` stores it under `reused` (`verification.STORED` fields) if it still holds (`verifier._holds`: a
+  refutation only while `_counter_evidence` keeps every entry and each command criterion runs the same command), no run; `Round.reused` and `states.replay`
+  (from `verifiers_planned`) treat it as the round's own verdict with `reused` {round, event}; `verify reopen`
+  also reopens a reused one. `max_runs` limits only new runs. `verify plan --round R` (reviewer runs complete, otherwise
   `reviews_incomplete`/`not_planned`) fixes once `verifiers_planned` with the first `[verifier] max_runs` as runs
   and the rest as `unverified`; per run `blocker`, `verifier_data` (one data block: the blocker, its place, the
   reviewers' reasons and quotes, the command criteria that ran in the round with their output, all cleaned and
-  marked) and `output_schema` (`verifier_output.schema.json`). The verifier runs no command itself: approved
+  marked) and `output_schema` (`verifier_output.schema.json`), plus `reused`, `gate` {mode, source} (`verifier.gate`:
+  `JUDICATA_GATE` warn/block overrides `[stop] gate`, other values are ignored) and `ask_more` (unverified
+  blockers and mode warn: the skill asks once, default no). `verify more --round R` (on the user's yes) writes
+  `verifiers_added` with one run per unverified blocker (`nothing_unverified` otherwise) and answers like plan
+  with `added`. The verifier runs no command itself: approved
   commands already ran in `round check` on the same files. `verify submit --round R --run X [--self]` validates
   JSON and schema (`invalid_verifier_output`, retry once, then discarded), then checks the counter-evidence of a
   refutation: quote = `review._location` plus a file of the contract's scope (planned paths without `exclude`, also
@@ -291,11 +302,11 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   (`not_refuted`, `stale_round` if a later round recorded the finding). Effects (`states.py`): a verdict belongs
   to (round, fingerprint) and is attached when that round records the finding (`Finding.verification`, also in
   `with_state`, `public()`, status); refuted and not reopened = severity `note`, so it does not block; a later
-  recording without its own verdict clears it (reuse of verdicts is #16); a reopen restores the severity.
+  recording without its own or a reused verdict clears it; a reopen restores the severity.
   `round close` refuses with `verification_incomplete` while a run waits, lists failed criteria whose live places
   are all refuted under `refuted` (not blocking, not unmet) and returns `verification` {planned, max_runs,
-  candidates, verified, refuted, inconclusive, discarded, unverified (without a plan every eligible blocker),
-  independent}. `status` has `refuted` and `verification` on every brief.
+  candidates, verified, refuted, inconclusive (reused verdicts included), discarded, unverified (without a plan
+  every eligible blocker), reused (count), independent}. `status` has `refuted` and `verification` on every brief.
 - `untrusted.py` (#34): text from the repo (ledger, contract) is never trusted; it is never blocked but detected,
   marked and defused. `clean(text, limit)`: one line, about `limit` characters with the note `[cut, N characters]`,
   control, format, bidi, private use, unassigned and invisible filler characters removed, code fences (```/~~~)
@@ -422,7 +433,7 @@ findings[{category, proposed, severity, file, line, symbol, quote, summary, evid
 section_hash, fingerprint}], findings_received}, `reviewer_output_rejected` {round, run, model, attempt,
 problems}, `reviewer_run_discarded` {round, run, model, reason}, `verdict_decided` {round, contract, criterion,
 criterion_hash, passed, reason, basis, files}. Verifier events: see `verification.py` (`verifiers_planned`,
-`verifier_verdict`, `verifier_output_rejected`, `verifier_run_discarded`, `verdict_reopened`). Only add new fields; during replay read missing fields with a
+`verifiers_added`, `verifier_verdict`, `verifier_output_rejected`, `verifier_run_discarded`, `verdict_reopened`). Only add new fields; during replay read missing fields with a
 default value.
 
 **Skills**: `skills/<name>/SKILL.md`, in English, only call the core, never fix anything and never change the
