@@ -49,7 +49,7 @@ def test_show_returns_the_template_and_a_proposal_to_edit(project):
     shown = project.ok("template", "show", "--template", "prose")
 
     criteria = {c["id"]: c for c in shown["template"]["criteria"]}
-    assert set(criteria) == {"PROSE-1", "PROSE-2", "PROSE-3", "PROSE-4"}
+    assert set(criteria) == {"PROSE-1", "PROSE-2", "PROSE-3", "PROSE-4", "PROSE-5"}
     assert criteria["PROSE-2"]["check"] == "pattern"
     assert "max_words" in criteria["PROSE-2"]["fill"]
     assert criteria["PROSE-2"]["hint"]
@@ -95,3 +95,14 @@ def test_dependencies_and_caches_do_not_decide_the_template(project):
             (project.root / folder / f"m{index}.js").write_text("x\n", encoding="utf-8")
 
     assert project.ok("template", "list", "--for", ".")["suggested"] == "prose"
+
+
+def test_docs_and_prose_templates_suggest_the_references_check(project):
+    docs = project.ok("template", "show", "--template", "docs")["proposal"]
+    prose = project.ok("template", "show", "--template", "prose")["proposal"]
+
+    [in_docs] = [c for c in docs["criteria"] if c["check"] == "references"]
+    [in_prose] = [c for c in prose["criteria"] if c["check"] == "references"]
+    assert in_docs["code_paths"] is True
+    assert in_prose["code_paths"] is False
+    assert in_docs["required"] and in_prose["required"]

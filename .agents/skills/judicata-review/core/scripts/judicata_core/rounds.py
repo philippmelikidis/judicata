@@ -8,7 +8,7 @@ Events written here (data fields):
                    stop {max_rounds, stall_rounds} of the contract (stop.py)
   criterion_result round, criterion, criterion_hash, check, passed, evidence,
                    revision (of the files when this check call began), places
-                   (failed patterns, see findings.pattern_places)
+                   (failed patterns and references, see findings.pattern_places)
   round_closed     round, outcome (done, continue, not_converged, round_limit,
                    required_unmet, done_with_unmet_required,
                    waiting_for_decision; focus_clear,
@@ -387,7 +387,7 @@ def check(project: Project, round_id: str, state_dir: str | None = None) -> dict
                 "evidence": outcome["evidence"],
                 "revision": artifact,
             }
-            if criterion.check == "pattern" and not outcome["passed"]:
+            if criterion.check in findings.PLACED and not outcome["passed"]:
                 whole = findings.scope_place(current.name, artifact["content"])
                 data["places"] = findings.pattern_places(
                     project, outcome["evidence"], whole
