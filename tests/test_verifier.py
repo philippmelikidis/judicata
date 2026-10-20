@@ -830,3 +830,41 @@ def test_on_request_the_rest_is_verified_too(project):
     assert closed["verification"]["unverified"] == []
     assert len(closed["verification"]["verified"]) == 3
     assert closed["verification"]["candidates"] == 3
+
+
+def test_a_refutation_by_a_command_that_changed_gets_a_new_run(project):
+    setup(project, command=PASSING_TESTS)
+    closed_with(project, "refuted_command")
+    project.write_contract(
+        "code",
+        contract_text(command="echo 'test_average_of_empty_list PASSED' # other"),
+    )
+
+    second = reviewed(project, reviewer_output("fail"))
+    plan = project.ok("verify", "plan", "--round", second)
+
+    assert len(plan["runs"]) == 1
+    assert plan["reused"] == []
+
+
+def test_an_earlier_verification_does_not_confirm_a_changed_unconfirmed_blocker(
+    project,
+):
+    setup(project)
+    closed_with(
+        project, "verified", reviewer_output("findings"), reviewer_output("pass")
+    )
+    shapes = project.root / "src" / "shapes.py"
+    shapes.write_text(
+        shapes.read_text(encoding="utf-8").replace(
+            "    return a / b", "    # plain division\n    return a / b"
+        ),
+        encoding="utf-8",
+    )
+
+    second = reviewed(project, reviewer_output("findings"), reviewer_output("pass"))
+    verified_with(project, second, "inconclusive")
+    [finding] = project.ok("finding", "list", "--round", second)["findings"]
+
+    assert finding["needs_decision"] is True
+    assert finding["confirmed"] is False

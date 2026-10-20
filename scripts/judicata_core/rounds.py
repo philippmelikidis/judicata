@@ -499,7 +499,7 @@ def with_state(entry: dict, contract_name: str, found: dict, round_id: str) -> d
     unconfirmed = (
         entry["consensus"] == "unconfirmed"
         and item.state == "open"
-        and not item.confirmed
+        and not item.settled  # a verified verdict of this round confirms it
         and not verification.refuted(item.verification or {})
     )
     represented = (
@@ -511,7 +511,7 @@ def with_state(entry: dict, contract_name: str, found: dict, round_id: str) -> d
         **entry,
         "state": item.state,
         "blocking": item.blocking,
-        "confirmed": item.confirmed,
+        "confirmed": item.settled,
         "decision": states.public_decision(item.decision),
         "presentation": kind,
         "previous_decision": states.public_decision(previous),

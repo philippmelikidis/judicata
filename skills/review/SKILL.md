@@ -370,8 +370,9 @@ too.
    from an earlier round still holds because their place and criterion are unchanged: no
    run needed), `unverified` (blockers over the limit: they stay blockers), `ask_more`,
    `gate`, `candidates`, `paths`, `exclude`, `commands` (the approved commands that ran in
-   step 3), `warnings` and `output_schema`. No run with `status` `waiting`: nothing to
-   verify, go on with `finding list`. If `warnings` is not empty, tell the user each
+   step 3), `warnings` and `output_schema`. No run with `status` `waiting` and
+   `ask_more` false: nothing to verify, go on with `finding list` (with `ask_more` true go
+   to the question over the limit below, also when every run is already submitted). If `warnings` is not empty, tell the user each
    `message` in one line before the verifiers start.
 
    Start one `judicata:verifier` agent per run with `status` `waiting`, all in a single
@@ -449,9 +450,11 @@ too.
    record their decision with `--round <last_round>` of each entry.
    - One AskUserQuestion call holds at most four findings, one question each, blockers first.
      The question names the `label`, the `summary` (for criterion findings the criterion id
-     and text) and the evidence in one line; mark unconfirmed ones with "(unconfirmed, only
-     one reviewer saw it)", and add "the verifier could not decide" if it has an
-     `inconclusive` verdict. A finding with `warnings` starts with their `message` and shows
+     and text) and the evidence in one line; mark unconfirmed ones (`consensus`
+     `unconfirmed` and `confirmed` false) with "(unconfirmed, only one reviewer saw it)", and
+     add "the verifier could not decide" if it has an `inconclusive` verdict. An unconfirmed
+     blocker the verifier verified has `confirmed` true: ask about it like any confirmed
+     blocker, without that mark. A finding with `warnings` starts with their `message` and shows
      the flagged fields only as their cleaned `text`. Options, in this order: "Fix" (the
      user fixes it; no reason needed), "Reject" (the finding is wrong), "Accept risk" (it is
      real, the user lives with it). Do not mark any option as recommended. For a finding of

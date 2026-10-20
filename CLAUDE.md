@@ -271,12 +271,12 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   consensus `single_reviewer`/`confirmed`/`unconfirmed`; never command or pattern criteria, nothing decided in
   this round, no suppressed or represented finding, nothing the user reopened at the same section hash
   (`reopened()`). Order: criterion findings, then security, correctness, factual, then more sightings, label,
-  fingerprint. Unconfirmed (#16): a `verified` verdict sets `Finding.confirmed` (`states._verify`), refuted =
-  note, so `needs_decision` stays only for inconclusive, discarded or unverified ones. Reuse (#16):
+  fingerprint. Unconfirmed (#16): a `verified` verdict of the latest recording round confirms it (`Finding.settled`,
+  not sticky like `confirmed`), refuted = note, so `needs_decision` stays only for inconclusive, discarded or unverified ones. Reuse (#16):
   `verification.earlier()` = the latest verdict of another round with the same contract, fingerprint and section
   hash (criterion findings also `criterion_hash`, stored in the verdict since #16; never a reopened one);
   `verify plan` stores it under `reused` (`verification.STORED` fields) if it still holds (`verifier._holds`: a
-  refutation only while `_counter_evidence` keeps every entry), no run; `Round.reused` and `states.replay`
+  refutation only while `_counter_evidence` keeps every entry and each command criterion runs the same command), no run; `Round.reused` and `states.replay`
   (from `verifiers_planned`) treat it as the round's own verdict with `reused` {round, event}; `verify reopen`
   also reopens a reused one. `max_runs` limits only new runs. `verify plan --round R` (reviewer runs complete, otherwise
   `reviews_incomplete`/`not_planned`) fixes once `verifiers_planned` with the first `[verifier] max_runs` as runs

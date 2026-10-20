@@ -492,7 +492,7 @@ def _finding_line(item: states.Finding, prefix: bool) -> str:
     marks = []
     if item.state == "resolved":
         marks.append("fixed, the next round confirms")
-    elif not item.confirmed:
+    elif not item.settled:
         marks.append("unconfirmed")
     mark = f" [{', '.join(marks)}]" if marks else ""
     return _cut(

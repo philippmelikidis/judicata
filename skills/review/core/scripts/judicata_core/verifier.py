@@ -406,6 +406,12 @@ def _holds(project: Project, current_round, verdict: dict) -> bool:
     if verdict.get("verdict") != "refuted":
         return True
     evidence = verdict.get("counter_evidence") or []
+    for item in evidence:
+        if item.get("kind") != "command":
+            continue
+        result = current_round.results.get(item.get("criterion")) or {}
+        if (result.get("evidence") or {}).get("command") != item.get("command"):
+            return False  # the criterion runs another command now
     kept, dropped = _counter_evidence(
         project, current_round, {"counter_evidence": evidence}
     )
