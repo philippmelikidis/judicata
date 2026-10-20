@@ -34,7 +34,10 @@ codex plugin add judicata@judicata
 
 Then trust the hooks once: start `codex`, open `/hooks` and trust the SessionStart and Stop
 hooks of judicata. Codex skips untrusted plugin hooks silently, and without them a new session
-does not know your earlier decisions and the stop gate does not warn. Differences to Claude Code: [reference](docs/reference.md#codex).
+does not know your earlier decisions and the stop gate does not run. On a repository you do
+not trust, start Codex with `codex --sandbox read-only`: the reviewers run in that sandbox, so
+they are read-only for real, and Codex asks you before judicata writes its ledger.
+Differences to Claude Code: [reference](docs/reference.md#codex).
 
 </details>
 
@@ -60,7 +63,8 @@ What each install gets:
 | | Claude Code plugin | Codex plugin | Plain skills (other agents) |
 | --- | --- | --- | --- |
 | Summary of your decisions in every new session (hook) | yes | yes, once you trusted the hook | no: the review and status skills read it themselves when they run, and say so |
-| Stop gate: a one-line warning when a turn ends with open blockers or unreviewed changes ([details](docs/reference.md#stop-gate)) | yes | yes, once you trusted the hook | no (no hooks) |
+| Stop gate, warn: a one-line warning when a turn ends with open blockers or unreviewed changes ([details](docs/reference.md#stop-gate)) | yes | yes, once you trusted the hook | no hooks: the skills tell the agent to check the status before it says done and to name what is open |
+| Stop gate, block: the agent may not end its turn then (`gate = "block"` or `JUDICATA_GATE=block`) | yes | yes, once you trusted the hook | no hooks: the same rule in the skills, an instruction only |
 | Independent reviewers in a fresh context | sub-agents with read-only tools | sub-agents, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents one reviewer, the session itself, and the report says so |
 | Questions | answer buttons | numbered list | the agent's question tool, or a numbered list |
 | Skills | `/judicata:review`, `/judicata:contract`, `/judicata:status` | `judicata:review`, ... | `review`, `contract`, `status` |
@@ -239,7 +243,8 @@ for code and for text.
 Carefully. A contract's commands run only after you approved them on your machine; nothing
 checked in can approve them. Text from the ledger and the contract is treated as data, cleaned
 and checked for prompt injection, and judicata asks you before acting on anything that reads
-like an instruction. That is a heuristic, not a guarantee. Details:
+like an instruction. That is a heuristic, not a guarantee. In Codex, start with
+`codex --sandbox read-only` there, so that the reviewers cannot write anything. Details:
 [Security](docs/reference.md#security).
 
 </details>
@@ -252,7 +257,8 @@ like an instruction. That is a heuristic, not a guarantee. Details:
   ("possible prompt injection detected in entry ..."), and judicata asks before doing anything
   they ask for.
 - In Codex and as plain skills, reviewers are read-only by instruction, not by a hard tool
-  limit.
+  limit. In Codex, `codex --sandbox read-only` makes them read-only for real; use it on
+  repositories you do not trust.
 - Review changes to `.judicata/` in a pull request like code.
 
 Full details and limits: [docs/reference.md](docs/reference.md#security).
@@ -261,11 +267,11 @@ Full details and limits: [docs/reference.md](docs/reference.md#security).
 
 - **Runs:** the Python core (`scripts/judicata.py`, standard library only, no packages
   installed), the commands of your contract after your approval, a SessionStart hook that prints
-  a summary of the ledger, a Stop hook that warns when work under a contract is not reviewed
-  and done, and reviewer sub-agents on your chat's model with read-only tools.
+  a summary of the ledger, a Stop hook that warns (or, if you ask for it, blocks) when work
+  under a contract is not reviewed and done, and reviewer sub-agents on your chat's model with read-only tools.
 - **Stores:** `.judicata/` (contracts and ledger) and one line in `.gitattributes` in your
-  project, and command approvals plus the start time of each session (for the stop gate) in
-  the plugin's data directory (or `~/.local/state/judicata`).
+  project, and command approvals plus the start time and the number of stop gate blocks of
+  each session in the plugin's data directory (or `~/.local/state/judicata`).
 - **Sends:** nothing. judicata makes no network requests and collects no data. Your agent's
   model sees the files under review, as with any review.
 

@@ -82,8 +82,8 @@ least 1) of the verifier that tries to refute blockers. `check = "references"` c
 links, anchors, images and citation keys exist, with `code_paths = true` (default false) also
 paths written in backticks. The verifier and the references check are still in development:
 until they ship, their fields are validated, stored and shown but have no effect, and a
-references criterion stays pending with that reason. The [stop gate](#stop-gate) already
-warns; `gate = "block"` only warns too until block mode ships.
+references criterion stays pending with that reason. The [stop gate](#stop-gate) warns and
+blocks.
 
 The reviewers also report findings outside the contract. Each one is tied to an address that
 survives moved lines: the class and function around the line in Python, the heading path and
@@ -140,26 +140,60 @@ their reasons, the round within the current pass and the open blockers per round
 ## Stop gate
 
 At the end of every agent turn the plugin's Stop hook asks the core whether the
-work under a contract is reviewed and done. It warns you in one line, and leaves the agent
-alone, when
+work under a contract is reviewed and done. It is not when
 
 - the latest review this session ran for a contract did not reach a final result (done, done
   with accepted risks, finished despite unmet required criteria, not converged, round limit):
   it ended in "continue", "required criteria not met" or a focused round, or it was not
-  closed. The line names the open blockers. A later final review of the contract, also from
+  closed. The gate names the open blockers. A later final review of the contract, also from
   another session, releases it.
 - files in a contract's scope were written or removed during this session after its last
   finished review looked at them, their content differs from what it saw, and no review of
-  them ran since. The line names the files this session wrote. Files written back unchanged
+  them ran since. The gate names the files this session wrote. Files written back unchanged
   do not count, and changes made before the session started alone do not either.
+
+What happens then depends on the gate mode:
+
+- **warn** (the default, `[stop] gate = "warn"`): one line for you, and the agent is left
+  alone. Good for interactive work.
+- **block** (`[stop] gate = "block"` in the contract, for everyone working on the project):
+  the agent may not end its turn. The hook answers with `decision: "block"` and a reason that
+  names the open blockers or the changed files and tells the agent what to do: review again,
+  or tell you plainly that the work is not done. You see the same in one line. The gate lets
+  go as soon as the latest review reached a final result, and after at most three blocks per
+  session: the next stop only warns and appends a `gate_released` event (session id, number
+  of blocks, contracts) to the ledger, so the gate can never trap an agent in a loop. An
+  agent that honestly reports "not done" is blocked again until that limit; the gate cannot
+  tell an honest report from a claim. The count lives in your state directory next to the
+  approvals; where it cannot be kept (no session id, a state directory that cannot be
+  written), the gate blocks at most once per turn (it lets go when the hook input says
+  `stop_hook_active`).
+
+`JUDICATA_GATE=block` or `JUDICATA_GATE=warn` in the environment of the agent overrides the
+mode of every contract for that run without changing a contract: block your night runs
+(`JUDICATA_GATE=block claude -p ...`) while interactive sessions only warn, or warn where a
+contract says block. Other values are ignored. With several contracts, only those in block
+mode block; the others are named in your line.
 
 Sessions that touched no contract, projects without `.judicata/` and any error give no output.
 The hook finds the session's reviews in the session transcript (the round ids in its
 judicata commands and answers) and the session start in its first timestamp. Without a transcript
 (`claude -p --no-session-persistence`) it uses the start the SessionStart hook recorded in your
 state directory (next to the approvals) and counts every review started since then, so
-parallel sessions in the same project see each other's reviews there. Plain skill installs
-have no hooks and no gate yet.
+parallel sessions in the same project see each other's reviews there.
+
+Per host:
+
+| Host | Warns | Blocks | Otherwise |
+| --- | --- | --- | --- |
+| Claude Code plugin | yes | with `gate = "block"` or `JUDICATA_GATE=block` | |
+| Codex plugin | yes, once you trusted the hooks in `/hooks` | the same, once you trusted the hooks | |
+| Plain skills (OpenCode, Cursor, Gemini CLI, ...) | no | no | the skills carry the rule: check the status before saying done and name what is open |
+
+Plain skills cannot ship hooks. Every judicata skill tells the agent to run the status before
+it says that work under a contract is done, and to say plainly that it is not done otherwise.
+That holds once a judicata skill ran in the conversation, and it is an instruction, not a
+check: ask for the status yourself before you trust a done.
 
 ## Codex
 
@@ -188,6 +222,11 @@ Ask in plain words as in Claude Code ("review this again", "is it done?") or nam
   files with shell commands in your session's sandbox and are told to change nothing, and
   they see the project's `AGENTS.md`. If sub-agents are switched off, the review runs with
   one reviewer, the session itself, and the report says that it was not independent.
+- **Untrusted repositories:** start Codex with `codex --sandbox read-only`. The reviewers
+  run in your session's sandbox, so they are then read-only by the sandbox too, not only by
+  instruction. judicata's own commands that write `.judicata/` (the ledger) or store an
+  approval cannot write in that sandbox; Codex asks you to allow them, and they write nothing
+  but `.judicata/` and the approval store.
 - **Questions** come as a numbered list in the chat; answer with the number or in words.
 - **Approvals** of a contract's commands are stored in `~/.local/state/judicata` (or
   `$XDG_STATE_HOME/judicata`), not in Claude Code's plugin data directory, so you approve
@@ -229,8 +268,10 @@ does not have:
   instruction only, as in Codex. Model names of Claude (opus, sonnet) become your session's
   model, and the report says so. If your agent has no sub-agents, the review runs with one
   reviewer, the session itself, and the report says that it was not independent.
-- **No stop gate.** Without hooks nothing warns at the end of a turn while a contract has open
-  blockers or unreviewed changes; ask for the status before you trust a done.
+- **No stop gate.** Without hooks nothing warns or blocks at the end of a turn while a
+  contract has open blockers or unreviewed changes. The skills carry the rule instead: check
+  the status before saying done and name what is open. Ask for the status yourself before you
+  trust a done.
 - **No question buttons.** Without a question tool, questions come as a numbered list in the
   chat, as in Codex.
 - **Approvals** of a contract's commands are stored in `~/.local/state/judicata` (or
