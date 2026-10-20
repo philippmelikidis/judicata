@@ -4,8 +4,8 @@
 `npx skills add` copies only the skill folders (skills/<name>/), not the plugin
 root. So skills/review/core/ carries a copy of everything the skills need from
 the plugin root: scripts/judicata.py with the package scripts/judicata_core/,
-templates/, agents/reviewer.md and LICENSE, in the same layout (the core finds
-its templates relative to itself).
+templates/, agents/reviewer.md, agents/verifier.md and LICENSE, in the same
+layout (the core finds its templates relative to itself).
 
 The source of truth stays at the plugin root. The check compares the contents and
 the executable bit (Git tracks it). Never edit the copy by hand:
@@ -25,6 +25,7 @@ SOURCES = [
     Path("scripts") / "judicata_core",
     Path("templates"),
     Path("agents") / "reviewer.md",
+    Path("agents") / "verifier.md",
     Path("LICENSE"),
 ]
 SKIP_DIRS = {"__pycache__"}

@@ -450,21 +450,7 @@ def _planned(current_round: rounds.Round) -> None:
 
 def _validate(project: Project, current_round: rounds.Round, text: str):
     """(problems, verdicts, files, findings, findings outside the focus)."""
-    if len(text.encode("utf-8")) > MAX_INPUT_BYTES:
-        return [_problem("", f"larger than {MAX_INPUT_BYTES} bytes")], [], {}, [], 0
-    text = text.strip()
-    fenced = FENCE_RE.match(text)
-    if fenced:
-        text = fenced.group(1).strip()
-    if not text:
-        return [_problem("", "empty, expected one JSON object")], [], {}, [], 0
-    try:
-        raw = json.loads(text)
-    except json.JSONDecodeError as exc:
-        return [_problem("", f"not valid JSON ({exc})")], [], {}, [], 0
-    except RecursionError:
-        return [_problem("", "nested too deeply")], [], {}, [], 0
-    problems = schema.validate(raw, output_schema())
+    raw, problems = parse_output(text, output_schema())
     if problems:
         return problems, [], {}, [], 0
 
@@ -473,17 +459,7 @@ def _validate(project: Project, current_round: rounds.Round, text: str):
 
     def in_scope() -> set[str]:
         if not scope_files:
-            left_out = set(current_round.plan["exclude"])
-            inside = (
-                None
-                if current_round.only is None
-                else assignment.within(current_round.only)
-            )
-            scope_files.update(
-                f
-                for f in Scope(project, current_round.plan["paths"]).files
-                if f not in left_out and (inside is None or inside(f))
-            )
+            scope_files.update(scope_of(project, current_round))
         return scope_files
 
     verdicts, files, seen = [], {}, set()
@@ -573,6 +549,40 @@ def _validate(project: Project, current_round: rounds.Round, text: str):
             continue
         found.append(findings.sighting(relative, place.text, place.anchor, item))
     return problems, verdicts, files, found, ignored
+
+
+def parse_output(text: str, wanted: dict):
+    """(object, problems) of an agent's answer: one JSON object, optionally in
+    a Markdown code fence, valid against the schema wanted."""
+    if len(text.encode("utf-8")) > MAX_INPUT_BYTES:
+        return None, [_problem("", f"larger than {MAX_INPUT_BYTES} bytes")]
+    text = text.strip()
+    fenced = FENCE_RE.match(text)
+    if fenced:
+        text = fenced.group(1).strip()
+    if not text:
+        return None, [_problem("", "empty, expected one JSON object")]
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as exc:
+        return None, [_problem("", f"not valid JSON ({exc})")]
+    except RecursionError:
+        return None, [_problem("", "nested too deeply")]
+    return raw, schema.validate(raw, wanted)
+
+
+def scope_of(project: Project, current_round: rounds.Round) -> set[str]:
+    """The files the round's reviewers judge: the planned paths without the
+    files of other contracts, narrowed to the round's files."""
+    left_out = set(current_round.plan["exclude"])
+    inside = (
+        None if current_round.only is None else assignment.within(current_round.only)
+    )
+    return {
+        f
+        for f in Scope(project, current_round.plan["paths"]).files
+        if f not in left_out and (inside is None or inside(f))
+    }
 
 
 def _scope_for_reviewers(project: Project, current_round, files: list[str]) -> dict:

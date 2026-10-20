@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/philippmelikidis/judicata/schemas/verifier-output/1",
+  "title": "judicata verifier output",
+  "description": "What one verifier run returns for the one blocker it got: a verdict, a one-line reason and, for refuted, the counter-evidence. Paths are relative to the project root.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdict",
+    "reason"
+  ],
+  "properties": {
+    "verdict": {
+      "description": "verified: the blocker is real. refuted: concrete counter-evidence shows it is wrong. inconclusive: you cannot decide from what you can read.",
+      "type": "string",
+      "enum": [
+        "verified",
+        "refuted",
+        "inconclusive"
+      ]
+    },
+    "reason": {
+      "description": "One line: why.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "counter_evidence": {
+      "description": "Only for refuted, at least one entry: a quote from a file in scope that handles the case, or a passing approved command with a line of its output. A refutation without valid counter-evidence counts as inconclusive.",
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/counter_evidence"
+      }
+    }
+  },
+  "$defs": {
+    "counter_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "description": "quote (with file, line, quote) or command (with criterion, output).",
+          "type": "string",
+          "enum": [
+            "quote",
+            "command"
+          ]
+        },
+        "file": {
+          "description": "quote: path of a file in the contract's scope, relative to the project root.",
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "description": "quote: 1-based line number the quote starts at (within 5 lines).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "quote": {
+          "description": "quote: verbatim text from the file at that line.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "criterion": {
+          "description": "command: the id of a command criterion that ran and passed in this round.",
+          "type": "string",
+          "minLength": 1
+        },
+        "output": {
+          "description": "command: text copied verbatim from that command's output that shows the case is handled.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    }
+  }
+}

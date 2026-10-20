@@ -7,6 +7,7 @@ version users get: Claude Code updates the plugin only when it goes up.
 ## [Unreleased]
 
 - Contract format 0.2: `[stop] gate` (`warn` by default, or `block`), a `[verifier]` table with `model` (default `inherit`) and `max_runs` (default 5), and the check kind `references` with `code_paths` (default off). Contracts from 0.1 load unchanged, keep their recorded version and get the defaults; `contract show` and the interview show the new fields. Until the references check ships, references criteria stay pending with that reason.
+- Verifier for confirmed blockers: a new `judicata:verifier` agent (fresh context, read tools only) gets one blocker from a judgment criterion or outside the contract with its place, the reviewers' evidence and the results of the approved commands of the round, and tries to refute it. New core commands `verify plan`, `verify submit` (`--self` when the session verifies itself), `verify discard` and `verify reopen`. Verdicts are verified (marked), refuted (only with a checked quote from the scope or a passing approved command with its output, otherwise inconclusive) or inconclusive. Refuted blockers become notes with the reason and no longer hold up done; the user can reopen them. At most `[verifier] max_runs` runs per round, most severe first; the rest are listed as unverified. Command and pattern criteria are never verified. The review skill runs the step, `round close` and `status` report it.
 
 ## [0.1.0] - 2026-10-19
 

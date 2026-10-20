@@ -118,8 +118,10 @@ as they are. One section per entry of `contracts`, in this order:
    criteria in `failed` that failed so far; they count as blockers once the round is closed.
 3. **Open blockers.** Each entry of `blockers`: `label`, the criterion id or `category`,
    `summary`, and `state` (`resolved` means the user chose to fix it and the next round still
-   has to confirm it). Then **should-fix** the same way, then the number of open notes
-   (`notes`).
+   has to confirm it). A blocker with `verification.verdict` `verified` survived a
+   verifier's challenge: say so. Then **should-fix** the same way, then the number of open
+   notes (`notes`). Blockers a verifier refuted (`refuted`) count as notes: name each with its
+   `label` and `verification.reason`, and that the user can reopen it in a review.
 4. **Accepted risks** (`accepted_risks`) and **rejected** findings (`rejected`): each with
    `label`, criterion id or `category`, `reason` and `reopen_condition`, verbatim.
 

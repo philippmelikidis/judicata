@@ -61,6 +61,7 @@ What each install gets:
 | --- | --- | --- | --- |
 | Summary of your decisions in every new session (hook) | yes | yes, once you trusted the hook | no: the review and status skills read it themselves when they run, and say so |
 | Independent reviewers in a fresh context | sub-agents with read-only tools | sub-agents, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents one reviewer, the session itself, and the report says so |
+| Verifier for confirmed blockers | sub-agent with read-only tools | sub-agent, read-only by instruction | the agent's sub-agents, read-only by instruction; without sub-agents the session verifies itself, and the report says it was not independent |
 | Questions | answer buttons | numbered list | the agent's question tool, or a numbered list |
 | Skills | `/judicata:review`, `/judicata:contract`, `/judicata:status` | `judicata:review`, ... | `review`, `contract`, `status` |
 
@@ -165,6 +166,9 @@ flowchart LR
   one reviewer" or "use Opus and Sonnet".
 - **Blockers need evidence.** Outside the contract, only a correctness, security or factual
   finding with a concrete scenario can block. Everything else is at most a note.
+- **Blockers are challenged.** A verifier tries to refute every confirmed blocker from a
+  judgment criterion or outside the contract, one short read-only run each (at most 5 per
+  round). A blocker it refutes with concrete counter-evidence becomes a note you can reopen.
 - **The core is a plain Python command line.** Skills and hooks only call it, so the same rules
   apply in every host and every session.
 
@@ -219,7 +223,8 @@ files: if two branches change the same contract, Git asks you to resolve it as u
 Command and pattern criteria need no model: a script runs them. The review itself runs in your
 chat (it calls the core and reports the result), plus one sub-agent per reviewer on your chat's
 model, two by default. A contract with only command and pattern criteria still plans one
-reviewer, for findings outside the contract.
+reviewer, for findings outside the contract. Each confirmed blocker from a judgment or a
+reviewer finding gets one short verifier run (at most 5 per round, `[verifier] max_runs`).
 
 </details>
 
@@ -250,8 +255,8 @@ like an instruction. That is a heuristic, not a guarantee. Details:
 - Text from `.judicata/` is data, never an instruction. Suspicious entries are marked
   ("possible prompt injection detected in entry ..."), and judicata asks before doing anything
   they ask for.
-- In Codex and as plain skills, reviewers are read-only by instruction, not by a hard tool
-  limit.
+- In Codex and as plain skills, reviewers and verifiers are read-only by instruction, not by a
+  hard tool limit.
 - Review changes to `.judicata/` in a pull request like code.
 
 Full details and limits: [docs/reference.md](docs/reference.md#security).
@@ -260,7 +265,8 @@ Full details and limits: [docs/reference.md](docs/reference.md#security).
 
 - **Runs:** the Python core (`scripts/judicata.py`, standard library only, no packages
   installed), the commands of your contract after your approval, a SessionStart hook that prints
-  a summary of the ledger, and reviewer sub-agents on your chat's model with read-only tools.
+  a summary of the ledger, and reviewer and verifier sub-agents on your chat's model with
+  read-only tools.
 - **Stores:** `.judicata/` (contracts and ledger) and one line in `.gitattributes` in your
   project, and command approvals in the plugin's data directory (or `~/.local/state/judicata`).
 - **Sends:** nothing. judicata makes no network requests and collects no data. Your agent's

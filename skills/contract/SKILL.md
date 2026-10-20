@@ -259,8 +259,8 @@ always as the first option with "(Recommended)" in its label, so that Enter take
      `{"model": "sonnet", "max_runs": 5}`. The verifier tries to refute each blocker from a
      judgment criterion or outside the contract before it holds up done.
    Free answers are fine: `models` has one model for all reviewers or one per reviewer,
-   `max_runs` is a whole number of at least 1. In this version the gate and the verifier are
-   only stored and take no effect yet; say so in one line with the question.
+   `max_runs` is a whole number of at least 1. In this version the gate is only stored and
+   takes no effect yet; say so in one line with the question.
 
 5. **Store.** Put the answers into the draft and store it:
 

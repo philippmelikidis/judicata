@@ -2,7 +2,7 @@
 
 An install copies only the skill folders (skills/<name>/), so the review skill
 carries a copy of the core in skills/review/core/, built from scripts/,
-templates/ and agents/reviewer.md by tools/bundle_core.py. These tests keep
+templates/ and agents/ by tools/bundle_core.py. These tests keep
 the copy equal to the source and run the core from an installed copy.
 """
 
@@ -109,6 +109,7 @@ def test_installed_skills_run_the_core_without_the_plugin(project, installed):
     assert summary["found"] is True
     assert str(project.script) in summary["context"]
     assert (installed / "review" / "core" / "agents" / "reviewer.md").is_file()
+    assert (installed / "review" / "core" / "agents" / "verifier.md").is_file()
 
 
 @pytest.mark.parametrize(

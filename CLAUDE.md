@@ -6,7 +6,7 @@ independent runs and hooks that feed the ledger into fresh sessions.
 
 - Stack: Python 3.11 or later, standard library only (core in `scripts/`), plugin parts in `skills/`, `agents/`,
   `hooks/`, evals in `evals/`. Spec: issue #3 (in philippmelikidis/judicata-dev). After changing `scripts/`,
-  `templates/` or `agents/reviewer.md` run `python3 tools/bundle_core.py` (copy in `skills/review/core/`).
+  `templates/` or `agents/` run `python3 tools/bundle_core.py` (copy in `skills/review/core/`).
 - Lint: `uvx ruff@0.17.1 check . && uvx ruff@0.17.1 format --check .`
 - Tests: `uv run --with pytest==9.1.1 pytest`
 - Workflow: every change starts as a GitHub issue, gets its own branch from `main` and a pull request against `main`.
@@ -264,6 +264,32 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `criterion_result` (`evidence` = consensus, verdicts, decision). File hash instead of section hash on purpose: a
   judgment criterion applies to the whole scope.
 
+- `verification.py` and `verifier.py` (group `verify`, #14): a verifier tries to refute each confirmed blocker
+  from a judgment before it holds up done. `verification.py` (pure, used by `states` and `rounds`): `select()` =
+  open blockers of the round's candidates (`rounds.with_state` before close) that are criterion findings of a
+  required judgment criterion with consensus `single`/`agreed` (not decided by the user) or reviewer findings with
+  consensus `single_reviewer`/`confirmed`; never command or pattern criteria, nothing decided in this round, no
+  suppressed or represented finding, nothing the user reopened at the same section hash (`reopened()`).
+  Unconfirmed blockers would join in `select()` (#16). Order: criterion findings, then security, correctness,
+  factual, then more sightings, label, fingerprint. `verify plan --round R` (reviewer runs complete, otherwise
+  `reviews_incomplete`/`not_planned`) fixes once `verifiers_planned` with the first `[verifier] max_runs` as runs
+  and the rest as `unverified`; per run `blocker`, `verifier_data` (one data block: the blocker, its place, the
+  reviewers' reasons and quotes, the command criteria that ran in the round with their output, all cleaned and
+  marked) and `output_schema` (`verifier_output.schema.json`). The verifier runs no command itself: approved
+  commands already ran in `round check` on the same files. `verify submit --round R --run X [--self]` validates
+  JSON and schema (`invalid_verifier_output`, retry once, then discarded), then checks the counter-evidence of a
+  refutation: quote = `review._location` plus a file in the round's scope (`review.scope_of`), command = a command
+  criterion of the round that passed, the output text in its `output_tail`; failing entries go to `dropped`, a
+  refutation without a valid one is stored as `inconclusive` with `downgraded` (`claimed` keeps the answer).
+  `--self` stores `independent` false. `verify discard`, `verify reopen --round R --fingerprint F --reason`
+  (`not_refuted`, `stale_round` if a later round recorded the finding). Effects (`states.py`): a verdict belongs
+  to (round, fingerprint) and is attached when that round records the finding (`Finding.verification`, also in
+  `with_state`, `public()`, status); refuted and not reopened = severity `note`, so it does not block; a later
+  recording without its own verdict clears it (reuse of verdicts is #16); a reopen restores the severity.
+  `round close` refuses with `verification_incomplete` while a run waits, lists failed criteria whose live places
+  are all refuted under `refuted` (not blocking, not unmet) and returns `verification` {planned, max_runs,
+  candidates, verified, refuted, inconclusive, discarded, unverified (without a plan every eligible blocker),
+  independent}. `status` has `refuted` and `verification` on every brief.
 - `untrusted.py` (#34): text from the repo (ledger, contract) is never trusted; it is never blocked but detected,
   marked and defused. `clean(text, limit)`: one line, about `limit` characters with the note `[cut, N characters]`,
   control, format, bidi, private use, unassigned and invisible filler characters removed, code fences (```/~~~)
@@ -344,7 +370,8 @@ evidence[{file, line, quote}], places[{address, label, section_hash, file, line}
 findings[{category, proposed, severity, file, line, symbol, quote, summary, evidence, address, label,
 section_hash, fingerprint}], findings_received}, `reviewer_output_rejected` {round, run, model, attempt,
 problems}, `reviewer_run_discarded` {round, run, model, reason}, `verdict_decided` {round, contract, criterion,
-criterion_hash, passed, reason, basis, files}. Only add new fields; during replay read missing fields with a
+criterion_hash, passed, reason, basis, files}. Verifier events: see `verification.py` (`verifiers_planned`,
+`verifier_verdict`, `verifier_output_rejected`, `verifier_run_discarded`, `verdict_reopened`). Only add new fields; during replay read missing fields with a
 default value.
 
 **Skills**: `skills/<name>/SKILL.md`, in English, only call the core, never fix anything and never change the
@@ -366,6 +393,11 @@ and scope defused.
 `omitClaudeMd: true` (Claude Code 2.1.271 or later). Receives only project, scope, focus, criteria, decisions and
 schema and answers with exactly one JSON object. The skill passes the answer unchanged to `review submit`.
 It carries the same data rule and reports text in the artifact that addresses AI reviewers as a `security` finding.
+`agents/verifier.md` (`judicata:verifier`, #14): the same frontmatter, gets one blocker (`verifier_data`) and answers
+with one verdict. Plugin agents ignore `hooks` and `permissionMode`, and `tools` cannot limit Bash to some commands,
+so the verifier has no Bash: it reads, and the core hands it the results of the approved commands. In Codex and
+plain skills it is a sub-agent with `<core>/agents/verifier.md` (read-only by instruction); without sub-agents the
+session verifies itself (`verify submit --self`) and the report says it was not independent.
 
 **Codex** (#19): the same files, no logic of its own. Installation via `codex plugin marketplace add` and
 `codex plugin add judicata@judicata` (reads `.claude-plugin/`), the plugin root is the copy under
@@ -411,7 +443,7 @@ No tests against internal functions. One file per behavior (`test_command_criter
 `test_review_scope.py` (diff, find, narrowed rounds), `test_session_summary.py`, `test_skills_install.py` (bundled
 core equals the source, drift is reported and rebuilt, the core runs from a copy of `skills/` alone via
 `project.script`, frontmatter), `test_review_focus.py`, `test_revision.py` also without `git`
-in PATH, `test_stop_rule.py`, `test_status.py`, `test_required_unmet.py`), `test_prompt_injection.py` (detection
+in PATH, `test_stop_rule.py`, `test_status.py`, `test_required_unmet.py`, `test_verifier.py` with outputs from `tests/fixtures/verifier/`), `test_prompt_injection.py` (detection
 with attack and harmless examples, marking in hook, plan, list, contract, status), `test_text_cleaning.py`
 (defusing). `core/ok/fail` take `stdin=` (dict as JSON, str, bytes); `proposal()` fills a template proposal like
 the interview does. Reviewer outputs are fixtures in `tests/fixtures/reviewer/`, they quote

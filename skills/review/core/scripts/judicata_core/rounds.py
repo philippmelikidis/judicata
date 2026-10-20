@@ -29,7 +29,8 @@ Events written here (data fields):
                    (reviewer|criterion; criterion findings add criterion,
                    criterion_hash, check, required, lines)
 Finding states and decisions: states.py, decisions.py.
-Reviewer events (see review.py) are replayed here too, onto the same Round.
+Reviewer events (see review.py) and verifier events (see verification.py) are
+replayed here too, onto the same Round.
 The round id is the id of its round_started event. Checking reloads the
 contract and refuses if it changed. A contract_version of the round's contract
 with another hash, recorded after the round started, leaves the round
@@ -67,6 +68,7 @@ from . import (
     states,
     stop,
     untrusted,
+    verification,
 )
 from .errors import JudicataError
 from .project import Project
@@ -109,6 +111,10 @@ class Round:
     started_seq: int = -1  # ledger position of round_started
     superseded: bool = False  # a newer contract version came after the start
     confirmed: dict | None = None  # finish_confirmed of this round
+    verifier_plan: dict | None = None  # verifiers_planned (verification.py)
+    verdicts: dict[str, dict] = field(default_factory=dict)  # run -> verdict
+    verifier_rejections: dict[str, list[dict]] = field(default_factory=dict)
+    verifier_discards: dict[str, dict] = field(default_factory=dict)
 
     @property
     def only(self) -> list[str] | None:
@@ -199,6 +205,42 @@ def _apply(rounds: dict[str, Round], event: dict, seq: int, known: dict) -> None
     elif event["type"] == REVIEWER_RUN_DISCARDED and data["round"] in rounds:
         _require(data, "run", "reason")
         rounds[data["round"]].discards.setdefault(data["run"], data)
+    elif event["type"] == verification.VERIFIERS_PLANNED and data["round"] in rounds:
+        _require(data, "runs", "unverified", "max_runs", "candidates")
+        found = rounds[data["round"]]
+        if found.verifier_plan is None:
+            found.verifier_plan = data
+    elif event["type"] == verification.VERIFIER_VERDICT and data["round"] in rounds:
+        _require(data, "run", "fingerprint", "verdict", "reason")
+        found = rounds[data["round"]]
+        if data["run"] not in found.verdicts:
+            found.verdicts[data["run"]] = {
+                **data,
+                "event": event["id"],
+                "ts": event.get("ts"),
+            }
+    elif event["type"] == verification.VERDICT_REOPENED and data["round"] in rounds:
+        _require(data, "verdict", "reason")
+        for verdict in rounds[data["round"]].verdicts.values():
+            if verdict["event"] == data["verdict"] and not verdict.get("reopened"):
+                verdict["reopened"] = {
+                    "event": event["id"],
+                    "ts": event.get("ts"),
+                    "reason": data["reason"],
+                }
+    elif (
+        event["type"] == verification.VERIFIER_OUTPUT_REJECTED
+        and data["round"] in rounds
+    ):
+        _require(data, "run")
+        rounds[data["round"]].verifier_rejections.setdefault(data["run"], []).append(
+            data
+        )
+    elif (
+        event["type"] == verification.VERIFIER_RUN_DISCARDED and data["round"] in rounds
+    ):
+        _require(data, "run", "reason")
+        rounds[data["round"]].verifier_discards.setdefault(data["run"], data)
     elif event["type"] == VERDICT_DECIDED and data["round"] in rounds:
         _require(data, "contract", "criterion", "criterion_hash", "passed", "files")
         decision = {**data, "event": event["id"], "ts": event.get("ts"), "seq": seq}
@@ -431,6 +473,7 @@ def with_state(entry: dict, contract_name: str, found: dict, round_id: str) -> d
             "presentation": None,
             "previous_decision": None,
             "needs_decision": False,
+            "verification": None,
         }
         return {**shown, "warnings": untrusted.finding(shown, entry.get("event"))}
     kind, previous = states.presentation(item, round_id)
@@ -453,7 +496,10 @@ def with_state(entry: dict, contract_name: str, found: dict, round_id: str) -> d
         "presentation": kind,
         "previous_decision": states.public_decision(previous),
         "needs_decision": unconfirmed or represented,
+        "verification": verification.public(item.verification),
     }
+    if verification.refuted(shown):  # a note while the refutation stands
+        shown["severity"] = "note"
     # possible prompt injection in its text or its decisions (untrusted.py)
     return {**shown, "warnings": untrusted.finding(shown, entry.get("event"))}
 
@@ -505,8 +551,24 @@ def close(project: Project, round_id: str) -> dict:
     current_round = open_round(project, round_id, all_rounds)
     if current_round.plan is not None:
         require_complete(current_round)
+    if current_round.verifier_plan is not None:
+        verification.require_complete(current_round)
     assessed = assess(project, current_round, all_rounds)
     before = simulate(events, all_rounds, current_round, assessed, closing=False)
+    eligible = (
+        []
+        if current_round.verifier_plan is not None
+        else verification.select(
+            [
+                with_state(e, current_round.contract, before, round_id)
+                for e in assessed["candidates"]
+            ],
+            assessed["results"],
+            current_round.contract,
+            round_id,
+            verification.reopened(events),
+        )
+    )
     unconfirmed = [
         e["fingerprint"]
         for e in assessed["candidates"]
@@ -626,6 +688,7 @@ def close(project: Project, round_id: str) -> dict:
         "pending": pending,
         "passed": view["passed"],
         "decided": view["decided"],
+        "refuted": view["refuted"],
         "required_unmet": unmet,
         "unmet_hash": unmet_hash,
         "confirmation": confirmation,
@@ -651,7 +714,16 @@ def close(project: Project, round_id: str) -> dict:
             "runs": consensus.run_states(current_round),
             "discarded": consensus.discarded_runs(current_round),
         },
+        "verification": _verification(current_round, eligible),
     }
+
+
+def _verification(current_round: Round, eligible: list[dict]) -> dict:
+    """The verifiers' verdicts of the round; texts from the ledger cleaned."""
+    found = verification.summary(current_round, eligible)
+    for key in (*verification.VERDICTS, "discarded", "unverified"):
+        found[key] = [untrusted.shown(entry) for entry in found[key]]
+    return found
 
 
 def _criteria(
@@ -663,8 +735,9 @@ def _criteria(
     passed; pending (no result); for a failed one, with its findings (this
     round's places plus live places of earlier rounds with the same criterion
     hash): blockers (required) and should_fix (optional) while one of them is
-    open or resolved, else unmet (required: never quietly done) or decided
-    (optional).
+    open or resolved and not refuted by a verifier, else refuted (every live
+    place refuted, none decided: it does not block), unmet (required: never
+    quietly done) or decided (optional).
     """
     contract_name = current_round.contract
     by_criterion: dict[str, list[dict]] = {}
@@ -673,7 +746,15 @@ def _criteria(
             by_criterion.setdefault(entry["criterion"], []).append(entry)
     view = {
         key: []
-        for key in ("passed", "blockers", "should_fix", "pending", "decided", "unmet")
+        for key in (
+            "passed",
+            "blockers",
+            "should_fix",
+            "pending",
+            "decided",
+            "unmet",
+            "refuted",
+        )
     }
     for criterion in current_round.criteria:
         data = results.get(criterion["id"])
@@ -698,7 +779,11 @@ def _criteria(
             and item.state in states.LIVE
             and states.in_view(current_round, item.info)
         ]
-        live = [e for e in own if e["state"] in states.LIVE]
+        live = [
+            e for e in own if e["state"] in states.LIVE and not verification.refuted(e)
+        ]
+        disproved = len(live) < len([e for e in own if e["state"] in states.LIVE])
+        decided = any(e["state"] in states.REGISTER for e in own)
         severity = "blocker" if criterion["required"] else "should-fix"
         item = {
             **_finding(contract_name, criterion, data, severity),
@@ -710,6 +795,8 @@ def _criteria(
             ]
         if live:
             view["blockers" if criterion["required"] else "should_fix"].append(item)
+        elif disproved and not decided:
+            view["refuted"].append(item)
         elif criterion["required"]:
             item["criterion_hash"] = criterion["hash"]
             item["findings"] = [
@@ -953,6 +1040,7 @@ def _brief(entries: list[dict]) -> list[dict]:
                 "state",
                 "decision",
                 "presentation",
+                "verification",
                 "warnings",
             )
         }
