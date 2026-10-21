@@ -12,7 +12,7 @@ later on the closed round. Interactive runs refuse as before (decision_needed).
 
 import json
 
-from conftest import FIXTURES, judgment_contract, reviewer_output
+from conftest import FIXTURES, command_contract, judgment_contract, reviewer_output
 from test_stop_gate import session
 
 RATIO = json.loads(reviewer_output("findings"))["findings"][0]  # correctness blocker
@@ -649,3 +649,51 @@ def test_the_report_of_a_later_round_names_an_earlier_waiting_decision(project):
         [waiting] = shown["next"]["waiting_for_decision"]
         assert waiting["round"] == first and waiting["criterion"] == "JUD-1"
     assert closed["waiting_for_decision"][0]["round"] == first
+
+
+# review findings on the merge with the round report
+
+
+def test_a_waiting_finding_of_an_unmet_required_criterion_counts_once(project):
+    (project.root / "app.txt").write_text("v1\n", encoding="utf-8")
+    project.write_contract("code", command_contract("false"))
+    first = project.ok("round", "start")["round"]
+    project.ok("round", "check", "--round", first)
+    [entry] = project.ok("finding", "list", "--round", first)["findings"]
+    project.ok(
+        "finding", "decide", "--round", first, "--fingerprint", entry["fingerprint"],
+        "--decision", "accept", "--reason", "Flaky here.", "--reopen-if", "in CI",
+    )  # fmt: skip
+    assert project.ok("round", "close", "--round", first)["open_blockers"] == 1
+    (project.root / "app.txt").write_text("v2\n", encoding="utf-8")
+    second = project.ok("round", "start")["round"]
+    project.ok("round", "check", "--round", second)
+
+    closed = project.ok("round", "close", "--round", second, "--unattended")
+
+    [waiting] = closed["waiting_for_decision"]
+    assert waiting["reason"] == "represented"
+    assert closed["outcome"] == "waiting_for_decision"
+    assert closed["open_blockers"] == 1  # one criterion, not twice
+
+
+def test_a_closed_report_does_not_ask_again_what_was_decided_since(project):
+    round_id = unconfirmed(project)
+    closed = project.ok("round", "close", "--round", round_id, "--unattended")
+    [waiting] = closed["waiting_for_decision"]
+    [finding] = [
+        f
+        for f in report(project, round_id)["findings"]
+        if f["fingerprint"] == waiting["fingerprint"]
+    ]
+    assert finding["number"] in report(project, round_id)["next"]["decide"]
+    project.ok(
+        "finding", "decide", "--round", round_id, "--fingerprint",
+        waiting["fingerprint"], "--decision", "fix",
+    )  # fmt: skip
+
+    shown = report(project, round_id)
+
+    assert finding["number"] not in shown["next"]["decide"]
+    [again] = [f for f in shown["findings"] if f["number"] == finding["number"]]
+    assert again["to_decide"] is False and again["needs_decision"] is False

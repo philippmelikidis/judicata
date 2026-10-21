@@ -153,9 +153,7 @@ plain skills there are no hooks, so this rule is the only gate.
 
 A run is unattended when nobody can answer your questions: a non-interactive run (for
 example `claude -p` or `codex exec`), a request that says not to ask, or no way to ask at all.
-The core also counts a run as unattended in block mode (`gate = "block"` in the contract, or
-`JUDICATA_GATE=block`) and with `JUDICATA_UNATTENDED=1` in the environment. In an unattended
-run never ask a question and never answer one for the user:
+In an unattended run never ask a question and never answer one for the user:
 
 - Step 7: plan the verifiers with `verify plan ... --unattended` (`ask_more` is then false).
 - Step 8: get the report with `round report ... --unattended` and render it; ask nothing.
@@ -164,13 +162,22 @@ run never ask a question and never answer one for the user:
   `next.criteria_to_decide` as "to decide later", not "now".
 - Step 9: close with `round close ... --unattended`. The round closes although decisions are
   open: each is in `waiting_for_decision` and counts as an open blocker, so the round is
-  never done (`outcome` `waiting_for_decision` while the pass goes on).
+  never done (`outcome` `waiting_for_decision` while the pass goes on). Never ask whether
+  to finish despite unmet required criteria (`next.finish_question`, `outcome`
+  `required_unmet`): the round stays `required_unmet`, and only the user can confirm
+  finishing, in a later session.
 - Step 10: the closed round's report lists them under `next.waiting_for_decision`; name each
-  with its `question`, say that the next session where the user can answer asks them first,
-  and end with the line `judicata: not done`.
+  with its `question` and say that the next session where the user can answer asks them
+  first. Unless the outcome is `done` (or `done_with_unmet_required`) with nothing waiting,
+  say that the work is not done and end with the line `judicata: not done`.
 
-In a session where the user can answer, nothing changes, also in block mode: ask in step 8
-before you close, and never pass `--unattended` to get around a question.
+The core also closes a round with open decisions instead of refusing in block mode (`gate =
+"block"` in the contract, or `JUDICATA_GATE=block`) and with `JUDICATA_UNATTENDED=1` in the
+environment, and its answers then say `unattended.unattended` true. That changes what the
+core does, not whether you ask: in a session where the user can answer, nothing changes,
+also in block mode. Ask in step 8 before you close (the entries of this round in
+`next.waiting_for_decision` are then the questions of step 8, not decisions for later), and
+never pass `--unattended` to get around a question.
 
 ## Decisions waiting from an unattended run
 

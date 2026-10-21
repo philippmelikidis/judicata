@@ -101,6 +101,14 @@ def report(project: Project, round_id: str, unattended: bool = False) -> dict:
     listed = [e for e in seen["entries"] if e["presentation"] != "suppressed"]
     numbered = _numbered(listed + earlier)
     shown = [_finding(current, seen, prior, entry, n) for n, entry in numbered]
+    decided_since = {  # a closed round: the user decided them after the close
+        w.get("fingerprint")
+        for w in seen["waiting"]
+        if w["kind"] == "finding" and w["round"] == round_id and not w["still_waiting"]
+    }
+    for entry in shown:
+        if entry["fingerprint"] in decided_since:
+            entry["needs_decision"] = entry["to_decide"] = False
     criteria = [_criterion(current, seen, c, shown) for c in current.criteria]
     rule = seen["stop"]
     counts = {name: 0 for name in findings.SEVERITIES}

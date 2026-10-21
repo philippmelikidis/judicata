@@ -775,8 +775,14 @@ def evaluate(
     else:  # the stop rule (stop.py); unmet required criteria are never quietly done
         if unmet:
             confirmation = _confirmation(events, contract_name, unmet_hash)
-        if unmet and confirmation is None:
-            open_blockers += len(unmet)  # they count until the user confirms
+        if unmet and confirmation is None:  # they count until the user confirms
+            open_blockers += len(  # once: a waiting finding of theirs counts already
+                [
+                    u
+                    for u in unmet
+                    if u["criterion"] not in _waiting_criteria(waits, entries)
+                ]
+            )
         finished = done and (not unmet or confirmation is not None)
         judged = stop.judge(events, all_rounds, current_round, finished, open_blockers)
         outcome, rule = judged["outcome"], judged["stop"]
@@ -816,6 +822,16 @@ def evaluate(
             waiting.shown(current_round, record, after) for record in waits
         ]
         + earlier,
+    }
+
+
+def _waiting_criteria(waits: list[dict], entries: list[dict]) -> set[str]:
+    """The criteria with a finding among the waiting decisions."""
+    waiting_findings = {r["fingerprint"] for r in waits if r["kind"] == "finding"}
+    return {
+        e["criterion"]
+        for e in entries
+        if e["fingerprint"] in waiting_findings and e.get("source") == "criterion"
     }
 
 
