@@ -546,3 +546,106 @@ def test_a_verdict_on_an_older_round_than_the_waiting_one_is_stale(project):
 
     assert error["code"] == "stale_round"
     assert error["details"]["latest_round"] == second
+
+
+# round report (#30): what waits for the user, before and after the close
+
+
+def report(project, round_id: str, *options: str) -> dict:
+    return project.ok("round", "report", "--round", round_id, *options)
+
+
+def test_the_report_of_an_unattended_open_round_shows_what_will_wait(project):
+    round_id = disagreed(project)
+
+    shown = report(project, round_id, "--unattended")
+
+    assert shown["unattended"] == {"unattended": True, "reason": "option"}
+    assert shown["result"]["outcome"] == "waiting_for_decision"
+    assert shown["result"]["outcome_label"] == "waiting for your decision"
+    assert shown["result"]["open_blockers"] == 1
+    [criterion] = [c for c in shown["criteria"] if c["criterion"] == "JUD-1"]
+    assert criterion["status"] == "undecided"
+    [waiting] = shown["next"]["waiting_for_decision"]
+    assert waiting["kind"] == "criterion" and waiting["criterion"] == "JUD-1"
+    assert waiting["round"] == round_id and waiting["still_waiting"] is True
+    assert "disagree" in waiting["question"]
+
+
+def test_the_report_of_an_interactive_open_round_asks_now_and_nothing_waits(project):
+    round_id = disagreed(project)
+
+    shown = report(project, round_id)
+
+    assert shown["unattended"] == {"unattended": False, "reason": None}
+    assert shown["result"]["outcome"] != "waiting_for_decision"
+    assert shown["next"]["criteria_to_decide"] == ["JUD-1"]
+    assert shown["next"]["waiting_for_decision"] == []
+
+
+def test_block_mode_makes_the_report_unattended_too(project):
+    round_id = unconfirmed(project, gate="block")
+
+    shown = report(project, round_id)
+
+    assert shown["unattended"] == {"unattended": True, "reason": "gate"}
+    [waiting] = shown["next"]["waiting_for_decision"]
+    assert waiting["kind"] == "finding" and waiting["reason"] == "unconfirmed"
+    [finding] = [f for f in shown["findings"] if f["needs_decision"]]
+    assert finding["fingerprint"] == waiting["fingerprint"]
+
+
+def test_the_report_of_a_closed_unattended_round_lists_what_waits(project):
+    round_id = disagreed(project)
+    closed = project.ok("round", "close", "--round", round_id, "--unattended")
+
+    shown = report(project, round_id)
+
+    assert shown["result"]["final"] is True
+    assert shown["result"]["outcome"] == "waiting_for_decision"
+    assert shown["result"]["open_blockers"] == closed["open_blockers"] == 1
+    assert shown["unattended"] == {"unattended": True, "reason": "option"}
+    [criterion] = [c for c in shown["criteria"] if c["criterion"] == "JUD-1"]
+    assert criterion["status"] == "undecided"
+    assert "disagree" in criterion["reason"]
+    [waiting] = shown["next"]["waiting_for_decision"]
+    assert waiting["criterion"] == "JUD-1" and waiting["still_waiting"] is True
+    assert shown["next"]["criteria_to_decide"] == []
+
+
+def test_a_decision_after_the_close_marks_the_entry_as_no_longer_waiting(project):
+    round_id = unconfirmed(project)
+    closed = project.ok("round", "close", "--round", round_id, "--unattended")
+    [waiting] = closed["waiting_for_decision"]
+    project.ok(
+        "finding", "decide", "--round", round_id, "--fingerprint",
+        waiting["fingerprint"], "--decision", "fix",
+    )  # fmt: skip
+
+    shown = report(project, round_id)
+
+    [entry] = shown["next"]["waiting_for_decision"]  # as the round closed
+    assert entry["fingerprint"] == waiting["fingerprint"]
+    assert entry["still_waiting"] is False
+
+
+def test_the_report_of_a_later_round_names_an_earlier_waiting_decision(project):
+    first = disagreed(project, required=False)
+    project.ok("round", "close", "--round", first, "--unattended")
+    second, runs = project.judged_round()
+    for run in runs:
+        project.ok(
+            "review", "discard", "--round", second, "--run", run["run"],
+            "--reason", "no answer",
+        )  # fmt: skip
+
+    before = report(project, second)
+    closed = project.ok("round", "close", "--round", second)
+    after = report(project, second)
+
+    for shown in (before, after):
+        assert shown["result"]["outcome"] == "waiting_for_decision"
+        assert shown["result"]["open_blockers"] == 1
+        [waiting] = shown["next"]["waiting_for_decision"]
+        assert waiting["round"] == first and waiting["criterion"] == "JUD-1"
+    assert closed["waiting_for_decision"][0]["round"] == first

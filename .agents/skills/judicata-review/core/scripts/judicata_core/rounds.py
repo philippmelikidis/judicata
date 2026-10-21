@@ -581,29 +581,10 @@ def close(project: Project, round_id: str, unattended: bool = False) -> dict:
         require_complete(current_round)
     if current_round.verifier_plan is not None:
         verification.require_complete(current_round)
-    assessed = assess(project, current_round, all_rounds)
-    before = simulate(events, all_rounds, current_round, assessed, closing=False)
-    eligible = (
-        []
-        if current_round.verifier_plan is not None
-        else verification.select(
-            [
-                with_state(e, current_round.contract, before, round_id)
-                for e in assessed["candidates"]
-            ],
-            assessed["results"],
-            current_round.contract,
-            round_id,
-            verification.reopened(events),
-        )
-    )
-    entries = [
-        with_state(e, current_round.contract, before, round_id)
-        for e in assessed["candidates"]
-    ]
-    unconfirmed = [e["fingerprint"] for e in entries if e["needs_decision"]]
-    mode = waiting.unattended(current_round.stop, unattended)
-    waits = waiting.records(current_round, assessed, entries)
+    found = evaluate(project, events, all_rounds, current_round, unattended)
+    assessed = found["assessed"]
+    unconfirmed = found["unconfirmed"]
+    mode = found["unattended"]
     if (assessed["needs_verdict"] or unconfirmed) and not mode["unattended"]:
         parts = []
         if assessed["needs_verdict"]:
@@ -627,69 +608,18 @@ def close(project: Project, round_id: str, unattended: bool = False) -> dict:
                 "findings": unconfirmed,
             },
         )
-    after = simulate(events, all_rounds, current_round, assessed, closing=True)
     contract_name = current_round.contract
-    shown = [
-        with_state(e, contract_name, after, round_id) for e in assessed["candidates"]
-    ]
-    view = _criteria(
-        current_round, assessed["results"], shown, after, assessed["no_verdict"]
-    )
+    after, shown, view = found["after"], found["shown"], found["view"]
     blockers, should_fix, pending = (
         view["blockers"],
         view["should_fix"],
         view["pending"],
     )
-    required_pending = any(item["required"] for item in pending)
-    blocking = [
-        item.public()
-        for item in states.of_contract(after, contract_name)
-        if item.blocking
-        and item.info.get("source") == "reviewer"
-        # a focused round answers for its focus only; a full one for everything
-        and (current_round.focus is None or states.in_view(current_round, item.info))
-    ]
-    # decisions earlier unattended rounds left open count here too (waiting.py)
-    earlier = waiting.carried(
-        all_rounds, after, current_round, assessed["results"], waits
-    )
-    done = (
-        not blockers
-        and not blocking
-        and not required_pending
-        and not waits
-        and not earlier
-    )
-    unmet = view["unmet"]
-    unmet_hash = _unmet_hash(contract_name, unmet) if unmet else None
-    confirmation = None
-    focused = current_round.focus is not None
-    open_blockers = len(blockers) + len(blocking) + len(waits) + len(earlier)
-    if focused:  # a part of the contract is never "done" for all of it
-        outcome = "focus_clear" if done and not unmet else "focus_open"
-        rule = stop.not_counted(current_round)
-    else:  # the stop rule (stop.py); unmet required criteria are never quietly done
-        if unmet:
-            confirmation = _confirmation(events, contract_name, unmet_hash)
-        if unmet and confirmation is None:
-            open_blockers += len(unmet)  # they count until the user confirms
-        finished = done and (not unmet or confirmation is not None)
-        judged = stop.judge(events, all_rounds, current_round, finished, open_blockers)
-        outcome, rule = judged["outcome"], judged["stop"]
-        if outcome == "done" and unmet:
-            outcome = DONE_UNMET
-        elif outcome == "continue" and (waits or earlier):  # the user decides, later
-            outcome = stop.WAITING
-        elif outcome == "continue" and done:  # only the unmet ones are left
-            outcome = REQUIRED_UNMET
-        rule["ended"] = outcome in stop.ENDS
-    risks = [{"kind": "criterion", **item} for item in view["decided"]] + [
-        {"kind": "finding", **stop.risk(untrusted.shown(item.public()))}
-        for item in states.of_contract(after, contract_name)
-        if item.info.get("source") == "reviewer"
-        and stop.counts_as_risk(item)
-        and states.in_view(current_round, item.info)
-    ]
+    blocking, outcome, rule = found["blocking"], found["outcome"], found["stop"]
+    open_blockers, focused = found["open_blockers"], found["focused"]
+    unmet, unmet_hash = found["unmet"], found["unmet_hash"]
+    confirmation, risks = found["confirmation"], found["risks"]
+    eligible = found["eligible"]
     writes = [(CRITERION_RESULT, data) for data in assessed["new_results"].values()] + [
         (FINDING_RECORDED, {"round": round_id, "contract": contract_name, **entry})
         for entry in assessed["candidates"]
@@ -711,7 +641,7 @@ def close(project: Project, round_id: str, unattended: bool = False) -> dict:
                     "required_unmet": [_unmet_record(item) for item in unmet],
                     "unmet_hash": unmet_hash,
                     "confirmation": confirmation,
-                    "waiting": waits,
+                    "waiting": found["waits"],
                     "unattended": mode["reason"],
                 },
             )
@@ -760,6 +690,128 @@ def close(project: Project, round_id: str, unattended: bool = False) -> dict:
         },
         "verification": _verification(current_round, eligible),
         "unattended": mode,
+        "waiting_for_decision": found["waiting_for_decision"],
+    }
+
+
+def evaluate(
+    project: Project,
+    events: list[dict],
+    all_rounds: dict,
+    current_round: Round,
+    unattended: bool = False,
+) -> dict:
+    """Everything round close decides, without writing and without refusing:
+    round close records it, round report shows it for an open round (the
+    outcome as if the round closed now). unconfirmed: the findings that still
+    need the user's decision. unattended (the option; also the environment
+    and block mode, waiting.py): those open decisions and the criteria the
+    reviewers did not settle go into waits and count as open blockers.
+    Decisions earlier unattended rounds left open that this round does not
+    settle count in every mode. waiting_for_decision: both, as reports show
+    them."""
+    round_id = current_round.id
+    assessed = assess(project, current_round, all_rounds)
+    before = simulate(events, all_rounds, current_round, assessed, closing=False)
+    eligible = (
+        []
+        if current_round.verifier_plan is not None
+        else verification.select(
+            [
+                with_state(e, current_round.contract, before, round_id)
+                for e in assessed["candidates"]
+            ],
+            assessed["results"],
+            current_round.contract,
+            round_id,
+            verification.reopened(events),
+        )
+    )
+    entries = [
+        with_state(e, current_round.contract, before, round_id)
+        for e in assessed["candidates"]
+    ]
+    unconfirmed = [e["fingerprint"] for e in entries if e["needs_decision"]]
+    mode = waiting.unattended(current_round.stop, unattended)
+    waits = (
+        waiting.records(current_round, assessed, entries) if mode["unattended"] else []
+    )
+    after = simulate(events, all_rounds, current_round, assessed, closing=True)
+    contract_name = current_round.contract
+    shown = [
+        with_state(e, contract_name, after, round_id) for e in assessed["candidates"]
+    ]
+    view = _criteria(
+        current_round, assessed["results"], shown, after, assessed["no_verdict"]
+    )
+    required_pending = any(item["required"] for item in view["pending"])
+    blocking = [
+        item.public()
+        for item in states.of_contract(after, contract_name)
+        if item.blocking
+        and item.info.get("source") == "reviewer"
+        # a focused round answers for its focus only; a full one for everything
+        and (current_round.focus is None or states.in_view(current_round, item.info))
+    ]
+    # decisions earlier unattended rounds left open count here too (waiting.py)
+    earlier = waiting.carried(
+        all_rounds, after, current_round, assessed["results"], waits
+    )
+    done = (
+        not view["blockers"]
+        and not blocking
+        and not required_pending
+        and not waits
+        and not earlier
+    )
+    unmet = view["unmet"]
+    unmet_hash = _unmet_hash(contract_name, unmet) if unmet else None
+    confirmation = None
+    focused = current_round.focus is not None
+    open_blockers = len(view["blockers"]) + len(blocking) + len(waits) + len(earlier)
+    if focused:  # a part of the contract is never "done" for all of it
+        outcome = "focus_clear" if done and not unmet else "focus_open"
+        rule = stop.not_counted(current_round)
+    else:  # the stop rule (stop.py); unmet required criteria are never quietly done
+        if unmet:
+            confirmation = _confirmation(events, contract_name, unmet_hash)
+        if unmet and confirmation is None:
+            open_blockers += len(unmet)  # they count until the user confirms
+        finished = done and (not unmet or confirmation is not None)
+        judged = stop.judge(events, all_rounds, current_round, finished, open_blockers)
+        outcome, rule = judged["outcome"], judged["stop"]
+        if outcome == "done" and unmet:
+            outcome = DONE_UNMET
+        elif outcome == "continue" and (waits or earlier):  # the user decides, later
+            outcome = stop.WAITING
+        elif outcome == "continue" and done:  # only the unmet ones are left
+            outcome = REQUIRED_UNMET
+        rule["ended"] = outcome in stop.ENDS
+    risks = [{"kind": "criterion", **item} for item in view["decided"]] + [
+        {"kind": "finding", **stop.risk(untrusted.shown(item.public()))}
+        for item in states.of_contract(after, contract_name)
+        if item.info.get("source") == "reviewer"
+        and stop.counts_as_risk(item)
+        and states.in_view(current_round, item.info)
+    ]
+    return {
+        "assessed": assessed,
+        "eligible": eligible,
+        "unconfirmed": unconfirmed,
+        "after": after,
+        "shown": shown,
+        "view": view,
+        "blocking": blocking,
+        "outcome": outcome,
+        "stop": rule,
+        "open_blockers": open_blockers,
+        "focused": focused,
+        "unmet": unmet,
+        "unmet_hash": unmet_hash,
+        "confirmation": confirmation,
+        "risks": risks,
+        "unattended": mode,
+        "waits": waits,
         "waiting_for_decision": [
             waiting.shown(current_round, record, after) for record in waits
         ]

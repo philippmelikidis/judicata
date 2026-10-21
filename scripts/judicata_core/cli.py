@@ -20,6 +20,7 @@ from . import (
     decisions,
     findings,
     gate,
+    report,
     review,
     rounds,
     session,
@@ -103,6 +104,15 @@ def _add_round(groups, common) -> None:
     close.add_argument("--round", required=True, help="round id from round start")
     _unattended_option(close, "close with open decisions, they wait for the user")
     close.set_defaults(handler=lambda a, p: rounds.close(p, a.round, a.unattended))
+
+    shown = commands.add_parser(
+        "report",
+        parents=[common],
+        help="the whole result of a round, before any decision question",
+    )
+    shown.add_argument("--round", required=True, help="round id from round start")
+    _unattended_option(shown, "an open round shows its open decisions as waiting")
+    shown.set_defaults(handler=lambda a, p: report.report(p, a.round, a.unattended))
 
     finish = commands.add_parser(
         "finish",

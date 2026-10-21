@@ -144,6 +144,16 @@ run the report says "N of M blockers verified" and asks once whether to verify t
 [unattended runs](#unattended-runs) it never asks and lists the unverified blockers. Where the host has no sub-agents, the session verifies itself
 and the report says it was not independent.
 
+Before judicata asks you anything about a round, it shows the whole round (`round report`): one
+line with the round of the pass, the outcome, the findings by severity and the open blockers
+per round (for example 6 -> 4 -> 3); every criterion, passed or failed with the reason; every
+finding on its own with a number, its place, what is wrong, the evidence, how many reviewers
+saw it, the verifier's verdict and whether it is new or came back (and why: its place changed,
+the fix did not hold); and what happens next (what you decide, what is to be fixed, when the
+next round runs, where the stop rule stands). Each question then names its findings by number,
+at most four per question; "fix all" is only ever an extra option. In hosts without a question
+tool the questions follow the report as a numbered list.
+
 After each review you decide the findings: fix, reject or accept the risk (the last two with a
 one-line reason and a condition under which the finding counts again). These decisions hold in
 every later session. A rejected or accepted finding that a reviewer reports again at the same,
@@ -268,8 +278,10 @@ anyway and these decisions wait for you:
   counts it (a pass that keeps waiting ends as not converged), and the outcome is "waiting
   for your decision" while the pass goes on. The stop gate treats it like any open blocker
   and names the decisions.
-- The report, `/judicata:status` and the summary of the next session list them as "waiting
-  for your decision", each with what to decide and the round it belongs to. The next session
+- The round report (under what happens next), `/judicata:status` and the summary of the next
+  session list them as "waiting for your decision", each with what to decide and the round it
+  belongs to. A later review lists the ones still open from earlier rounds in its report too,
+  and they count as its open blockers until you decide them. The next session
   where you can answer asks them first; your answers are recorded on that closed round, and
   the next review applies them (an agreed verdict holds while the files it covered are
   unchanged, a rejected finding while its place is unchanged).
@@ -437,7 +449,7 @@ core). Never edit the copies by hand: after changing the source run
 repository root has no `skills-lock.json` (the installer would take the copies as installed);
 the tool checks both. When Codex runs inside this repository it also lists the copies as
 repository skills; users do not see them. The behavior of the plugin in Claude Code (skills,
-reviewer agent, hook) is checked by five acceptance evals in `evals/`, run with
+reviewer agent, hook) is checked by six acceptance evals in `evals/`, run with
 `claude plugin eval` against the plugin and, as a baseline, against Claude without it:
 
 | Case | Checks |
@@ -447,6 +459,7 @@ reviewer agent, hook) is checked by five acceptance evals in `evals/`, run with
 | `03-required-blocker` | a failed required criterion is a blocker, nothing is fixed or decided |
 | `04-not-converged` | a third round without progress ends as "not converged" |
 | `05-module-scope` | "Prüf das Modul ledger" reviews exactly that module |
+| `06-round-report` | the round report (result, criteria, every finding by number, next) comes before any question |
 
 Each case prepares a throwaway project with `scaffold.sh` (artifact from `project/`, contract
 and earlier rounds from `setup.json`, written through the core, see `evals/_lib/scaffold.py`).

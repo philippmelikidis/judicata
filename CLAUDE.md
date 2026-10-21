@@ -271,6 +271,24 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   not see, with `last_round`. Re-presented findings accept any decision, also after `round close`;
   `--decision keep` (only then, otherwise `not_represented`) rewrites the old decision with the new section hash,
   reason and condition carried over if not given, field `kept` = event ID of the old one.
+- `report.py` (#30): `round report --round R` = the whole result of a round as cleaned data, for the skills to render
+  before any decision question (all hosts the same). Open round (reviewer and verifier runs complete, otherwise
+  `reviews_incomplete`/`verification_incomplete`; `contract_changed` if superseded): from `rounds.evaluate()`, the
+  pure part of `round close` (assess, simulate, criteria, stop rule) that close then writes, so the outcome is the
+  one close would record now (`result.final` false). Closed round: from the replay (`recorded`, `_criteria`), the
+  pass position from `stop.passes`. Order: `warnings` (all, first), `result` (pass, round_in_pass, max_rounds,
+  outcome, outcome_label, severity counts of the numbered findings, open_blockers, open_blockers_per_round,
+  stalled_rounds, suppressed count), `criteria` (status passed|failed|pending|undecided, effect of a failed one,
+  reason in one sentence derived from the evidence, finding numbers), `findings` (numbered from 1: earlier ones last,
+  then by severity, criterion before reviewer; place, summary, evidence, reviewers {saw, of} or null for
+  deterministic checks, consensus, verification (verdict, `unverified`, `discarded`, `not_run`), history
+  {status new|still_open|came_back|earlier, why} from a replay of the events before the round started, state,
+  decision, to_decide, decide_round, fingerprint), `next` (decide, criteria_to_decide, fix, finish_question,
+  next_round {round_in_pass, rounds_left, last_in_pass, not_converged_unless_below, new_pass}, waiting_for_decision
+  (#29)), `unattended`. `--unattended` (or the environment, block mode) passes to `evaluate()`, so an open round
+  shows what an unattended close would leave waiting; a closed round lists what waited when it closed (own records
+  plus `waiting.carried()` over a replay up to its `round_closed`, criteria it left waiting as `undecided`), each
+  with `still_waiting` from `waiting.pending()` now. Every text goes through `untrusted.clean`; writes nothing.
 - `consensus.py`: status per judgment criterion `single`, `agreed`, `disagreed`, `unconfirmed` (only one valid run
   out of several), `decided`, `carried_over`, `no_verdict`. A decision keeps applying with the same contract, the
   same criterion hash, unchanged files (SHA-256, from the sighting or from disk) and no newly quoted file, even
@@ -318,9 +336,10 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   candidates, verified, refuted, inconclusive (reused verdicts included), discarded, unverified (without a plan
   every eligible blocker), reused (count), independent}. `status` has `refuted` and `verification` on every brief.
 - `waiting.py` (#29): unattended runs. `unattended(stop, option)` = {unattended, reason}: `--unattended` (round
-  close, verify plan), `JUDICATA_UNATTENDED` 1/true/yes/on (other values ignored) or block mode (`gate(stop)`:
+  close, round report, verify plan), `JUDICATA_UNATTENDED` 1/true/yes/on (other values ignored) or block mode (`gate(stop)`:
   `JUDICATA_GATE` warn/block over the given `[stop]`; round close uses the round's `round_started.stop`, verify plan
-  and `verifier.gate` the contract). Unattended, `round close` does not raise `decision_needed`: `records()` stores
+  and `verifier.gate` the contract). `rounds.evaluate(..., unattended)` takes the mode, so `round close` and `round
+  report` agree. Unattended, `round close` does not raise `decision_needed`: `records()` stores
   the open decisions in `round_closed.waiting` ({kind criterion, criterion, criterion_hash, basis} or {kind finding,
   fingerprint, reason unconfirmed|represented, verifier inconclusive|unverified|discarded|not_planned}), each adds to
   `open_blockers` and prevents done; `continue` becomes `waiting_for_decision` (`stop.WAITING`, not in `ENDS`),
@@ -469,8 +488,10 @@ default value.
 **Skills**: `skills/<name>/SKILL.md`, in English, only call the core, never fix anything and never change the
 contract or the ledger by hand. So far `review` (scope and focus from the request, a one-line announcement, resolve
 with a follow-up question and assign, start, check, approval of the commands with AskUserQuestion, "Not now" first
-and without a recommendation, reviewers in parallel, present disagreements, decisions on findings with at most four
-per AskUserQuestion, reason and suggested reopen condition, close, report; without a contract or with `unmatched`
+and without a recommendation, reviewers in parallel, verifiers, then `round report` rendered in a fixed order (result, criteria,
+every finding with its number, what happens next) before any question about the round, disagreements and decisions
+on findings with at most four per AskUserQuestion, each naming the finding by number (a bulk option only in
+addition), reason and suggested reopen condition, close, report; without a contract or with `unmatched`
 it reads the interview from `contract`; report with the round within the pass and the result of the stop rule;
 unattended runs ask nothing and close with `--unattended`, decisions waiting from such a run are asked first),
 `contract` (show, interview with AskUserQuestion, the default is always the first option = Enter; change only on
@@ -550,7 +571,8 @@ core and prefixed copies equal the source, drift is reported and rebuilt, a visi
 exits 2, the core runs from a copy of `.agents/skills/` alone via `project.script`, every path a copy names exists
 there, no plugin name left in the copies, frontmatter), `test_review_focus.py`, `test_revision.py` also without `git`
 core equals the source, drift is reported and rebuilt, the core runs from a copy of `skills/` alone via
-`project.script`, frontmatter), `test_review_focus.py`, `test_stop_gate.py` (via `project.hook("stop", ...)` with a written transcript, Claude Code
+`project.script`, frontmatter), `test_review_focus.py`, `test_round_report.py` (report of open and closed rounds, and the
+review skill puts it before every question), `test_stop_gate.py` (via `project.hook("stop", ...)` with a written transcript, Claude Code
 and Codex form, and without one after a SessionStart), `test_stop_gate_block.py` (block mode, limit, environment), `test_revision.py` also without `git`
 in PATH, `test_stop_rule.py`, `test_status.py`, `test_required_unmet.py`), `test_prompt_injection.py` (detection
 `project.script`, frontmatter), `test_review_focus.py`, `test_revision.py` also without `git`
