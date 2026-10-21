@@ -223,7 +223,7 @@ def _round(project: Project, round_id: str):
 def _entries(project, events, all_rounds, current_round) -> tuple[list[dict], bool]:
     name = current_round.contract
     if current_round.closed is None:
-        assessed = rounds.assess(project, current_round, all_rounds)
+        assessed = rounds.assess(project, current_round, all_rounds, events)
         found = rounds.simulate(
             events, all_rounds, current_round, assessed, closing=False
         )

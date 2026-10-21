@@ -137,9 +137,9 @@ and say done only if the latest round for the scope you mean ended in `done` (wi
 risks: say so) or `done_with_unmet_required` (say "finished despite unmet required
 criteria"), and no file in that scope changed after that round. `not_converged` and
 `round_limit` end a pass but are not done. Otherwise say plainly that the work is not done,
-name what is open (the blockers, `required_unmet`, rounds not closed, or the files changed
-since the last review), offer a review, and end that answer with the line
-`judicata: not done`.
+name what is open (the blockers, `required_unmet`, `waiting_for_decision`, rounds not
+closed, or the files changed since the last review), offer a review, and end that answer
+with the line `judicata: not done`.
 
 In Claude Code and Codex the plugin's stop gate checks the same at the end of every turn: it
 warns, or with `gate = "block"` in the contract (or `JUDICATA_GATE=block` in the environment)
@@ -148,6 +148,61 @@ review again, or tell the user honestly that the work is not done and end with t
 `judicata: not done` (the gate takes that line as an honest report and lets the turn end).
 Never claim done to get past it, and never write that line when you say the work is done. As
 plain skills there are no hooks, so this rule is the only gate.
+
+## Unattended runs
+
+A run is unattended when nobody can answer your questions: a non-interactive run (for
+example `claude -p` or `codex exec`), a request that says not to ask, or no way to ask at all.
+In an unattended run never ask a question and never answer one for the user:
+
+- Step 7: plan the verifiers with `verify plan ... --unattended` (`ask_more` is then false).
+- Step 8: get the report with `round report ... --unattended` and render it; ask nothing.
+  Leave the disagreements and the findings that need a decision open and record nothing in
+  the user's name: they are in `next.waiting_for_decision`. Render `next.decide` and
+  `next.criteria_to_decide` as "to decide later", not "now".
+- Step 9: close with `round close ... --unattended`. The round closes although decisions are
+  open: each is in `waiting_for_decision` and counts as an open blocker, so the round is
+  never done (`outcome` `waiting_for_decision` while the pass goes on). Never ask whether
+  to finish despite unmet required criteria (`next.finish_question`, `outcome`
+  `required_unmet`): the round stays `required_unmet`, and only the user can confirm
+  finishing, in a later session.
+- Step 10: the closed round's report lists them under `next.waiting_for_decision`; name each
+  with its `question` and say that the next session where the user can answer asks them
+  first. Unless the outcome is `done` (or `done_with_unmet_required`) with nothing waiting,
+  say that the work is not done and end with the line `judicata: not done`.
+
+The core also closes a round with open decisions instead of refusing in block mode (`gate =
+"block"` in the contract, or `JUDICATA_GATE=block`) and with `JUDICATA_UNATTENDED=1` in the
+environment, and its answers then say `unattended.unattended` true. That changes what the
+core does, not whether you ask: in a session where the user can answer, nothing changes,
+also in block mode. Ask in step 8 before you close (the entries of this round in
+`next.waiting_for_decision` are then the questions of step 8, not decisions for later), and
+never pass `--unattended` to get around a question.
+
+## Decisions waiting from an unattended run
+
+If the session context lists "Waiting for your decision" for the contract, or `status
+--project <dir> --contract <name>` answers entries in `waiting_for_decision`, and the user
+can answer in this conversation, put them to the user first, before step 1 of the review the
+user asked for. Each entry has `round` (the closed round it belongs to), `kind`, `question`
+and `decide_with`. As before any question about a round, first show the report of each
+round named there: `round report --project <dir> --round <round>` (closed, as it closed),
+rendered as "Round report" says; its entries in `next.waiting_for_decision` with
+`still_waiting` false were decided since or settled by a later round, say so in one line and
+do not ask them. Then ask:
+
+- `kind` `criterion`: show the criterion id, `text` and each entry of `verdicts` with its
+  reason and places, and ask as in step 8. Record the answer on that round:
+  `review decide --project <dir> --round <round> --criterion <criterion> --passed true|false --reason "<one line>"`.
+- `kind` `finding`: ask as in step 8 (`label`, `severity`, `summary`, `file`:`line`; the
+  options Fix, Reject, Accept risk; for `reason` `represented` first "Keep decision" with
+  `previous_decision`), with the reason and reopen condition for Reject and Accept risk.
+  Record it on that round: `finding decide --project <dir> --round <round> --fingerprint
+  <fingerprint> --decision ...`.
+
+`round_closed` or `stale_round` means a later round took the entry over: skip it. Then say in
+one line that the next round applies these decisions and go on with the review (offer one if
+the user asked for nothing else). Unattended, leave them open and name them in the report.
 
 ## Steps
 
@@ -426,9 +481,9 @@ plain skills there are no hooks, so this rule is the only gate.
    verifier for every run with `status` `waiting` and submit their answers as in step 7,
    then run `round report` again and show the findings whose verification changed before
    you ask about them. If
-   `ask_more` is false (`gate.mode` is `block`: an unattended run or a contract that blocks)
-   or nobody can answer (a non-interactive run), never ask: the report lists the
-   unverified blockers. Ask this question at most once per round.
+   `ask_more` is false (`unattended.unattended` is true: block mode, `JUDICATA_UNATTENDED`
+   or `--unattended`) or nobody can answer (see "Unattended runs"), never ask: the report
+   lists the unverified blockers. Ask this question at most once per round.
 
    Criteria the reviewers did not settle (`next.criteria_to_decide`, status `undecided` in
    the report): get the details once,
@@ -524,6 +579,7 @@ plain skills there are no hooks, so this rule is the only gate.
      `not_represented` means keep was used on a finding that did not come back.
    - If the user wants to skip the decisions, leave confirmed findings open, but an
      unconfirmed candidate needs an answer before step 9 can run: say so and ask once more.
+     Only an unattended run closes with it open (see "Unattended runs").
 
 9. Close the round and get the outcome.
 
@@ -531,6 +587,7 @@ plain skills there are no hooks, so this rule is the only gate.
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" round close --project <dir> --round <round>
    ```
 
+   In an unattended run add `--unattended` (see "Unattended runs").
    `decision_needed` means step 8 (`error.details.criteria` or `error.details.findings`)
    is not finished, `reviews_incomplete` step 6, `verification_incomplete` the verifiers of
    step 7. The answer has
@@ -546,8 +603,11 @@ plain skills there are no hooks, so this rule is the only gate.
    should-fix findings that do not block because the user rejected or accepted them, each
    with its reason), `refuted` (failed criteria whose every open place a verifier refuted:
    they do not block), `verification` (`verified`, `refuted`, `inconclusive`, `discarded`,
-   `unverified`, `reused`, `candidates`, `planned`, `independent`), `outcome_label` and
-   `stop`.
+   `unverified`, `reused`, `candidates`, `planned`, `independent`), `outcome_label`,
+   `stop`, `unattended` (`unattended`, `reason`: `option`, `JUDICATA_UNATTENDED` or
+   `gate`) and `waiting_for_decision` (the decisions an unattended close left open, each
+   with `round`, `kind` `criterion` or `finding`, `question`, `decide_with` and what to
+   show; empty otherwise).
 
    `outcome` follows the contract's stop rule. Rounds count per contract and scope within a
    pass: `stop.round_in_pass` of at most `stop.max_rounds`, `stop.open_blockers_per_round`
@@ -614,6 +674,11 @@ plain skills there are no hooks, so this rule is the only gate.
      blockers like `continue`, and the entries of `required_unmet` (required criteria in the
      focus that fail although the user decided their findings; only a review without focus
      can finish with them).
+   - `outcome` `waiting_for_decision` (only unattended): say it is not done because
+     decisions wait for the user; list every entry of `waiting_for_decision` with its
+     `question` and what it is about, then the rest like `continue`. They count as open
+     blockers, so a pass that stays like this ends as `not_converged`. An entry of
+     `waiting_for_decision` after another outcome is reported the same way.
    - `outcome` `continue`: list every entry of `blockers` with its criterion id, text and the
      evidence. Then every entry of `required_unmet` (required criteria that still fail
      although the user rejected or accepted their findings, with the decisions and reasons;
@@ -675,8 +740,8 @@ this order. The user must be able to decide from it alone.
    `result.outcome_label`" (`result.final` false: say "as it stands before your
    decisions"), the counts by severity from `result.severity` ("3 blockers, 1 should-fix,
    2 notes") and the open blockers per round of `result.open_blockers_per_round` joined with
-   " -> " (for example "6 -> 4 -> 3"; a failed criterion counts once however many places
-   it fails at, plus every blocking finding outside the contract). A focused round (`result.counted` false) says
+   " -> " (for example "6 -> 4 -> 3"; every blocking place counts: a criterion failing at four
+   places is four, plus every blocking finding outside the contract). A focused round (`result.counted` false) says
    "focused round, it does not count for the stop rule" instead of the round numbers.
 2. **Criteria**, one line each: id, text, passed or failed (or pending, or undecided: the
    reviewers did not agree, the user decides); a failed one with its `effect` (blocks,
@@ -691,7 +756,10 @@ this order. The user must be able to decide from it alone.
    `not_run`), whether it is new or came back (`history`: `new`; `still_open`, open since an
    earlier round; `came_back` because `place_changed`, `fix_not_confirmed` (the fix did not
    hold), `closed_before` or `criterion_changed`; `earlier`, an open blocker from an earlier
-   round that this round did not see) and a decision if there is one. If
+   round that this round did not see) and a decision if there is one. A criterion finding
+   with entries in `merged` adds one line per entry: "also reported by a reviewer" with its
+   `category`, `summary` and `evidence` (the same place, so it is not a finding of its own
+   and not asked about separately). If
    `result.suppressed` is not 0, one line: that many earlier decisions held at unchanged
    places.
 4. **What happens next**: what the user decides now (the numbers in `next.decide`, the
@@ -702,7 +770,12 @@ this order. The user must be able to decide from it alone.
    `new_pass` is true; `last_in_pass`: it is the last round of this pass) and where the stop
    rule stands (`not_converged_unless_below` N: the next round must have fewer than N open
    blockers, otherwise the review counts as not converged; `next.finish_question`: you will
-   ask whether to finish despite unmet required criteria).
+   ask whether to finish despite unmet required criteria). Then every entry of
+   `next.waiting_for_decision` (decisions an unattended run left to the user, also from
+   earlier rounds; `round` names the round each belongs to): "waiting for your decision:"
+   with its `question` and what it is about (criterion id and `text`, or `label`,
+   `severity` and `summary`). They count as open blockers until the user decides them;
+   one with `still_waiting` false was decided since or settled by a later round.
 5. Only then the questions of step 8, each naming its findings by number.
 
 If `warnings` is not empty, the report starts with each `message` in one line: the entries

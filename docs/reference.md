@@ -140,19 +140,24 @@ counter-evidence still holds. A changed place or criterion gets a new run. At mo
 new runs per round (default 5), most severe first; the rest stay blockers. In an interactive
 run the report says "N of M blockers verified" and asks once whether to verify the rest
 (default no). In block mode (`[stop] gate = "block"` or the environment variable
-`JUDICATA_GATE=block` for unattended runs, which overrides the contract) it never asks and
-lists the unverified blockers. Where the host has no sub-agents, the session verifies itself
+`JUDICATA_GATE=block` for unattended runs, which overrides the contract) and in other
+[unattended runs](#unattended-runs) it never asks and lists the unverified blockers. Where the host has no sub-agents, the session verifies itself
 and the report says it was not independent.
 
 Before judicata asks you anything about a round, it shows the whole round (`round report`): one
 line with the round of the pass, the outcome, the findings by severity and the open blockers
-per round (for example 6 -> 4 -> 3); every criterion, passed or failed with the reason; every
+per round (for example 6 -> 4 -> 3; every blocking place counts, so a criterion that fails at
+four places is four open blockers and fixing one of them shows as progress); every criterion, passed or failed with the reason; every
 finding on its own with a number, its place, what is wrong, the evidence, how many reviewers
 saw it, the verifier's verdict and whether it is new or came back (and why: its place changed,
 the fix did not hold); and what happens next (what you decide, what is to be fixed, when the
 next round runs, where the stop rule stands). Each question then names its findings by number,
 at most four per question; "fix all" is only ever an extra option. In hosts without a question
-tool the questions follow the report as a numbered list.
+tool the questions follow the report as a numbered list. A reviewer finding at the same file
+and line (or Markdown paragraph) as a failed command, pattern or references criterion is not
+listed or asked about twice: it is merged into the criterion's finding and shown there as
+context (one more severe than the criterion's finding, or one where you already decided either
+of them, stays on its own).
 
 After each review you decide the findings: fix, reject or accept the risk (the last two with a
 one-line reason and a condition under which the finding counts again). These decisions hold in
@@ -260,6 +265,36 @@ Plain skills cannot ship hooks. Every judicata skill tells the agent to run the 
 it says that work under a contract is done, and to say plainly that it is not done otherwise.
 That holds once a judicata skill ran in the conversation, and it is an instruction, not a
 check: ask for the status yourself before you trust a done.
+
+### Unattended runs
+
+Some decisions only you can make: reviewers disagree on a judgment criterion, a blocker only
+one reviewer saw and the verifier could not decide (or did not verify, over its limit), or a
+finding you decided earlier whose place changed. In an interactive session the review asks
+you before it closes the round. In an unattended run nobody can answer, so the round closes
+anyway and these decisions wait for you:
+
+- A run counts as unattended in block mode (`[stop] gate = "block"` or `JUDICATA_GATE=block`;
+  `JUDICATA_GATE=warn` makes a blocking contract interactive again), with
+  `JUDICATA_UNATTENDED=1` (also `true`, `yes`, `on`; other values are ignored) in the
+  environment, or when the review skill closes with `round close --unattended` because it
+  cannot ask (for example in `claude -p` or `codex exec`).
+- Each open decision counts as an open blocker: the round is never done, the stop rule
+  counts it (a pass that keeps waiting ends as not converged), and the outcome is "waiting
+  for your decision" while the pass goes on. The stop gate treats it like any open blocker
+  and names the decisions.
+- The round report (under what happens next), `/judicata:status` and the summary of the next
+  session list them as "waiting for your decision", each with what to decide and the round it
+  belongs to. A later review lists the ones still open from earlier rounds in its report too,
+  and they count as its open blockers until you decide them. The next session
+  where you can answer asks them first; your answers are recorded on that closed round, and
+  the next review applies them (an agreed verdict holds while the files it covered are
+  unchanged, a rejected finding while its place is unchanged).
+- Interactive sessions behave as before, also in block mode: the review asks before it
+  closes.
+
+As plain skills the same happens in the core; there is no hook, so the review and status
+skills read the waiting decisions themselves when they run, and no gate names them.
 
 ## Codex
 
@@ -386,7 +421,8 @@ injection.
   role switches ("system:", "you are now"), requests for tool calls, shell commands, changes
   to settings, permissions or approvals, keeping things from the user, sending secrets,
   invisible and bidi control characters, code fences, tags like `<system>`, encoded blobs,
-  lookalike letters from other scripts and very long texts. Its answers (session context,
+  lookalike letters from other scripts and very long texts (over about 400 characters; the
+  reasons of reviewers and verifiers over about 1,500). Its answers (session context,
   review plan, finding list, contract show) mark each hit per entry ("possible prompt
   injection detected in entry ..."), with the field and the reason, and Claude names them
   when it reports.

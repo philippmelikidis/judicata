@@ -42,6 +42,7 @@ from . import (
     schema,
     states,
     untrusted,
+    waiting,
 )
 from .errors import JudicataError
 from .project import Project
@@ -383,9 +384,29 @@ def findings_of(project: Project, round_id: str) -> dict:
 def decide(
     project: Project, round_id: str, criterion_id: str, passed: bool, reason: str
 ) -> dict:
-    """Record the user's verdict on a criterion the reviewers did not settle."""
-    all_rounds = rounds.replay(ledger.read(project))
-    current_round = rounds.open_round(project, round_id, all_rounds)
+    """Record the user's verdict on a criterion the reviewers did not settle.
+
+    A closed round takes it only for a criterion it left waiting for the user
+    (an unattended run, waiting.py) while that still waits."""
+    events = ledger.read(project)
+    all_rounds = rounds.replay(events)
+    current_round = all_rounds.get(round_id)
+    state = None
+    if current_round is not None and current_round.closed is not None:
+        state = waiting.criterion_state(
+            all_rounds,
+            current_round,
+            criterion_id,
+            _contract_now(project, current_round.contract),
+        )
+    if state not in (None, "waits"):
+        raise JudicataError(
+            "stale_round",
+            "a later round left this criterion waiting too, decide it there",
+            {"round": round_id, "criterion": criterion_id, "latest_round": state},
+        )
+    if state is None:
+        current_round = rounds.open_round(project, round_id, all_rounds)
     _planned(current_round)
     reason = reason.strip()
     if not reason:
@@ -427,6 +448,14 @@ def decide(
         "passed": passed,
         "decision": event["id"],
     }
+
+
+def _contract_now(project: Project, name: str):
+    """The contract as it is now, None if it cannot be read."""
+    try:
+        return contract.select(project, name)
+    except JudicataError:
+        return None
 
 
 def _run(current_round: rounds.Round, run_id: str) -> dict:

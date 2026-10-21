@@ -16,6 +16,10 @@ round report --round R answers, in this order:
   findings  every finding on its own, numbered from 1, blockers first: source,
             criterion, category, severity, place {file, line, lines, label},
             summary (what is wrong), evidence (scenario, quote, hit or output),
+            merged (reviewer findings at the place of a failed command,
+            pattern or references criterion, merged into its finding instead
+            of listed twice, #32: category, severity, consensus, summary,
+            evidence, reviewers = how many runs saw it; [] otherwise),
             reviewers {saw, of: planned runs, answered: valid answers} (None for
             deterministic checks and earlier findings), consensus,
             confirmed, verification (verified, refuted, inconclusive, unverified:
@@ -31,7 +35,15 @@ round report --round R answers, in this order:
             fix, the next round confirms them), finish_question (the round is
             required_unmet: the user is asked whether to finish anyway),
             next_round {counted, round_in_pass, pass, max_rounds, rounds_left,
-            last_in_pass, not_converged_unless_below, new_pass}
+            last_in_pass, not_converged_unless_below, new_pass},
+            waiting_for_decision (#29, waiting.py: the decisions an unattended
+            round leaves to the user and those earlier rounds left open that
+            it does not settle, each with round, kind, question, decide_with
+            and still_waiting: false once the user decided it or a later
+            round settled it)
+  unattended {unattended, reason}: an open round with --unattended (also
+            JUDICATA_UNATTENDED or block mode) is reported as round close
+            --unattended would close it; a closed round says how it closed
 An open round needs every reviewer and verifier run in (reviews_incomplete,
 verification_incomplete). A closed round is reported as round close left it
 (the ledger up to its round_closed): later decisions and rounds are for status.
@@ -42,6 +54,7 @@ report writes nothing.
 
 from . import (
     address,
+    contract,
     findings,
     ledger,
     narrow,
@@ -50,6 +63,7 @@ from . import (
     stop,
     untrusted,
     verification,
+    waiting,
 )
 from .errors import JudicataError
 from .project import Project
@@ -61,7 +75,7 @@ ASKED = ("blocker", "should-fix")
 COUNTING = ("done", stop.DONE_UNMET)
 
 
-def report(project: Project, round_id: str) -> dict:
+def report(project: Project, round_id: str, unattended: bool = False) -> dict:
     events = ledger.read(project)
     all_rounds = rounds.replay(events)
     current = all_rounds.get(round_id)
@@ -70,9 +84,9 @@ def report(project: Project, round_id: str) -> dict:
             "round_not_found", f"no round with id {round_id!r}", {"round": round_id}
         )
     if current.closed is None:
-        seen = _open(project, events, all_rounds, current)
+        seen = _open(project, events, all_rounds, current, unattended)
     else:
-        seen = _closed(events, all_rounds, current)
+        seen = _closed(project, events, all_rounds, current)
     prior = states.replay(events[: current.started_seq], all_rounds)
     here = {e["fingerprint"] for e in seen["entries"]}
     in_round = {c["id"] for c in current.criteria}  # the focus
@@ -91,14 +105,22 @@ def report(project: Project, round_id: str) -> dict:
     listed = [e for e in seen["entries"] if e["presentation"] != "suppressed"]
     numbered = _numbered(listed + earlier)
     shown = [_finding(current, seen, prior, entry, n) for n, entry in numbered]
+    decided_since = {  # a closed round: the user decided them after the close
+        w.get("fingerprint")
+        for w in seen["waiting"]
+        if w["kind"] == "finding" and w["round"] == round_id and not w["still_waiting"]
+    }
+    for entry in shown:
+        if entry["fingerprint"] in decided_since:
+            entry["needs_decision"] = entry["to_decide"] = False
     criteria = [_criterion(current, seen, c, shown) for c in current.criteria]
     rule = seen["stop"]
     counts = {name: 0 for name in findings.SEVERITIES}
     for entry in shown:
         counts[entry["severity"]] = counts.get(entry["severity"], 0) + 1
     warnings = []
-    for item in [*criteria, *shown]:
-        warnings += [w for w in item["warnings"] if w not in warnings]
+    for item in [*criteria, *shown, *seen["waiting"]]:
+        warnings += [w for w in item.get("warnings") or [] if w not in warnings]
     return {
         "round": round_id,
         "contract": untrusted.clean(current.contract, 100),
@@ -128,17 +150,18 @@ def report(project: Project, round_id: str) -> dict:
         "criteria": criteria,
         "findings": shown,
         "next": _next(seen, shown, rule),
+        "unattended": seen["unattended"],
     }
 
 
-def _open(project, events, all_rounds, current) -> dict:
+def _open(project, events, all_rounds, current, unattended: bool) -> dict:
     if current.superseded:
         raise rounds.contract_changed(current.id, current.contract)
     if current.plan is not None:
         rounds.require_complete(current)
     if current.verifier_plan is not None:
         verification.require_complete(current)
-    found = rounds.evaluate(project, events, all_rounds, current)
+    found = rounds.evaluate(project, events, all_rounds, current, unattended)
     assessed = found["assessed"]
     return {
         "entries": found["shown"],
@@ -147,6 +170,11 @@ def _open(project, events, all_rounds, current) -> dict:
         "results": assessed["results"],
         "judged": {e["criterion"]: e for e in assessed["judged"]},
         "needs_verdict": assessed["needs_verdict"],
+        "undecided": set(),
+        "unattended": found["unattended"],
+        "waiting": [  # computed from the ledger as it is: they wait now
+            {**entry, "still_waiting": True} for entry in found["waiting_for_decision"]
+        ],
         "eligible": {e["fingerprint"] for e in found["eligible"]},
         "outcome": found["outcome"],
         "outcome_label": stop.label(found["outcome"], len(found["risks"])),
@@ -166,9 +194,10 @@ def _open(project, events, all_rounds, current) -> dict:
     }
 
 
-def _closed(events, all_rounds, current) -> dict:
+def _closed(project, events, all_rounds, current) -> dict:
     """The round as round close left it: later decisions, verdicts and rounds
-    are not part of its report (status shows where things stand now)."""
+    are not part of its report (status shows where things stand now). Only
+    still_waiting of each decision the round left waiting is from now."""
     found = states.replay(events[: current.closed_seq + 1], all_rounds)
     entries = [
         rounds.with_state(e, current.contract, found, current.id)
@@ -177,13 +206,24 @@ def _closed(events, all_rounds, current) -> dict:
     view = rounds._criteria(current, current.results, entries, found, set())
     closed = current.closed
     outcome = current.outcome
+    waits = _waiting_at_close(project, events, all_rounds, current, found)
+    own = [w for w in waits if w["round"] == current.id and w["kind"] == "criterion"]
     return {
         "entries": entries,
         "found": found,
         "view": view,
         "results": current.results,
-        "judged": {},
+        "judged": {  # the reviewers' verdicts of the criteria left waiting
+            w["criterion"]: {"status": w["basis"], "verdicts": w["verdicts"]}
+            for w in own
+        },
         "needs_verdict": [],
+        "undecided": {w["criterion"] for w in own},
+        "unattended": {
+            "unattended": closed.get("unattended") is not None,
+            "reason": closed.get("unattended"),
+        },
+        "waiting": waits,
         "eligible": set(),
         "outcome": outcome,
         "outcome_label": stop.label(outcome, closed.get("accepted_risks") or 0),
@@ -191,6 +231,41 @@ def _closed(events, all_rounds, current) -> dict:
         "open_blockers": stop.blockers(current),
         "evidence_warnings": evidence_warnings(current, current.results),
     }
+
+
+def _waiting_at_close(project, events, all_rounds, current, found) -> list[dict]:
+    """The decisions waiting when the round closed (its own and those earlier
+    rounds left open, as round close listed them), each with still_waiting:
+    whether it still waits for the user now (status)."""
+    at = rounds.replay(events[: current.closed_seq + 1])
+    closing = at[current.id]
+    own = [r for r in closing.closed.get("waiting") or [] if isinstance(r, dict)]
+    listed = [waiting.shown(closing, record, found) for record in own]
+    listed += waiting.carried(at, found, closing, closing.results, own)
+    if not listed:
+        return []
+    try:
+        now = contract.select(project, current.contract)
+    except JudicataError:
+        now = None
+    still = {
+        _waiting_key(entry)
+        for entry in waiting.pending(
+            all_rounds, states.replay(events, all_rounds), current.contract, now
+        )
+    }
+    return [
+        {**entry, "still_waiting": _waiting_key(entry) in still} for entry in listed
+    ]
+
+
+def _waiting_key(entry: dict) -> tuple:
+    return (
+        entry.get("round"),
+        entry.get("kind"),
+        entry.get("criterion") if entry.get("kind") == "criterion" else None,
+        entry.get("fingerprint"),
+    )
 
 
 def _rule(events, all_rounds, current) -> dict:
@@ -204,7 +279,9 @@ def _rule(events, all_rounds, current) -> dict:
         ids = [r.id for r in members]
         if current.id not in ids:
             continue
-        counts = [stop.blockers(r) for r in members[: ids.index(current.id) + 1]]
+        upto = members[: ids.index(current.id) + 1]
+        counts = [stop.blockers(r) for r in upto]
+        start = stop.comparable([stop.counting(r) for r in upto])
         return {
             "counted": True,
             "pass": number,
@@ -212,7 +289,7 @@ def _rule(events, all_rounds, current) -> dict:
             **stop.limits(current),
             "stalled_rounds": 0
             if current.outcome in COUNTING
-            else stop.stalled(counts),
+            else stop.stalled(counts[start:]),
             "open_blockers_per_round": counts,
             "ended": current.outcome in stop.ENDS,
         }
@@ -267,6 +344,7 @@ def _finding(current, seen: dict, prior: dict, entry: dict, number: int) -> dict
         },
         "summary": summary,
         "evidence": evidence,
+        "merged": _merged_findings(entry),
         "reviewers": None
         if saw is None or earlier
         else {"saw": saw, "of": planned, "answered": answered},
@@ -292,6 +370,27 @@ def _finding(current, seen: dict, prior: dict, entry: dict, number: int) -> dict
             else [],
         ),
     }
+
+
+def _merged_findings(entry: dict) -> list[dict]:
+    """Reviewer findings at this criterion finding's place, merged into it
+    (#32): what they said, as context."""
+    found = []
+    for item in entry.get("merged") or []:
+        if not isinstance(item, dict):
+            continue
+        summary, evidence, saw = _what(None, {}, {**item, "source": "reviewer"})
+        found.append(
+            {
+                "category": untrusted.clean(item.get("category"), 60),
+                "severity": item.get("severity"),
+                "consensus": item.get("consensus"),
+                "summary": summary,
+                "evidence": evidence,
+                "reviewers": saw,
+            }
+        )
+    return found
 
 
 def _merged(*lists: list[dict]) -> list[dict]:
@@ -497,7 +596,7 @@ def _criterion(current, seen: dict, criterion: dict, shown: list[dict]) -> dict:
     view = seen["view"]
     data = seen["results"].get(cid)
     effect, reason = None, None
-    if cid in seen["needs_verdict"]:
+    if cid in seen["needs_verdict"] or cid in seen["undecided"]:
         status = "undecided"
         reason = _disagreement(seen["judged"].get(cid) or {})
     elif data is None:
@@ -611,5 +710,6 @@ def _next(seen: dict, shown: list[dict], rule: dict) -> dict:
         "criteria_to_decide": [untrusted.clean(c, 60) for c in seen["needs_verdict"]],
         "fix": [f["number"] for f in shown if f["state"] == "resolved"],
         "finish_question": outcome == stop.REQUIRED_UNMET,
+        "waiting_for_decision": seen["waiting"],
         "next_round": following,
     }

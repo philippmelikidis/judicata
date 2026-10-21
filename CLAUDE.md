@@ -113,7 +113,12 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `contract_version` events before `round_started` plus `contract_hash`), and evaluates in this order: `done`, then
   `not_converged` (in the last `stall_rounds` rounds of the pass the open blockers were never below the round before;
   the first round is only the baseline, so with the default of 2 at the earliest after round 3), then `round_limit`
-  (round `max_rounds`), otherwise `continue`. Unmet required criteria (#33): unconfirmed, they count in
+  (round `max_rounds`), otherwise `continue`. Open blockers count places (#32): every live, not refuted place of a
+  failed required criterion (`_criteria` sets `open_places`), every blocking reviewer finding, every waiting decision
+  and every decided place of an unconfirmed unmet required criterion (`_unmet_places`, a waiting place only once);
+  `round_closed.blockers_counted` = `"places"`. Rounds closed before counted a failed criterion once: `stalled`
+  only compares the rounds at the end of a pass that count the same way (`stop.comparable`, `stop.counting`), also
+  in `round report`. Unmet required criteria (#33): unconfirmed, they count in
   `open_blockers` and prevent `done`; if nothing else is open, `continue` becomes `required_unmet` (pass stays open,
   so after `stall_rounds` honestly `not_converged`); confirmed (carried over), `done` becomes
   `done_with_unmet_required`. Limits from `round_started.stop` (contract at the start, older rounds use the
@@ -235,6 +240,15 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `round check` (forbid per section, require/limits/unreadable per file, truncated list plus scope), command and no
   place = `{kind: "scope"}` with the content hash of the revision.
   `address.Locator` parses a file once for many lines.
+  No double findings (#32): `findings.merge()` (in `rounds.assess`, which therefore takes `events`) drops a reviewer
+  finding at the place of a criterion finding of a failed `command`, `pattern` or `references` criterion of the
+  round (same file and every sighting's line in its `lines`, or the same Markdown paragraph address) and appends it
+  to that finding's `merged` [{fingerprint, category, severity, consensus, summary, line, sightings}] (recorded
+  with it, in `round report` as `merged`, scanned by `untrusted.finding`, cleaned by `untrusted.shown`). It stays
+  on its own when it is more severe than the criterion finding, or when either fingerprint was in the register
+  when the round started (`rounds._register`). `round_closed` closes an earlier live reviewer finding the round
+  merged (why `merged`, also an undecided confirmed blocker). Command criteria only have the scope place, so
+  nothing merges into them.
 - `states.py`: state per (contract, fingerprint) from replay only: `open`, `resolved` (fix), `closed`, `rejected`,
   `accepted` (the latter two = register). `finding_decided` sets the state (also before recording, decisions happen
   before `round close`); `finding_recorded` reopens `resolved` from another round and `closed`, and lets a decision
@@ -284,8 +298,11 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   deterministic checks, consensus, verification (verdict, `unverified`, `discarded`, `not_run`), history
   {status new|still_open|came_back|earlier, why} from a replay of the events before the round started, state,
   decision, to_decide, decide_round, fingerprint), `next` (decide, criteria_to_decide, fix, finish_question,
-  next_round {round_in_pass, rounds_left, last_in_pass, not_converged_unless_below, new_pass}). Every text goes
-  through `untrusted.clean`; writes nothing.
+  next_round {round_in_pass, rounds_left, last_in_pass, not_converged_unless_below, new_pass}, waiting_for_decision
+  (#29)), `unattended`. `--unattended` (or the environment, block mode) passes to `evaluate()`, so an open round
+  shows what an unattended close would leave waiting; a closed round lists what waited when it closed (own records
+  plus `waiting.carried()` over a replay up to its `round_closed`, criteria it left waiting as `undecided`), each
+  with `still_waiting` from `waiting.pending()` now. Every text goes through `untrusted.clean`; writes nothing.
 - `consensus.py`: status per judgment criterion `single`, `agreed`, `disagreed`, `unconfirmed` (only one valid run
   out of several), `decided`, `carried_over`, `no_verdict`. A decision keeps applying with the same contract, the
   same criterion hash, unchanged files (SHA-256, from the sighting or from disk) and no newly quoted file, even
@@ -332,6 +349,26 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   are all refuted under `refuted` (not blocking, not unmet) and returns `verification` {planned, max_runs,
   candidates, verified, refuted, inconclusive (reused verdicts included), discarded, unverified (without a plan
   every eligible blocker), reused (count), independent}. `status` has `refuted` and `verification` on every brief.
+- `waiting.py` (#29): unattended runs. `unattended(stop, option)` = {unattended, reason}: `--unattended` (round
+  close, round report, verify plan), `JUDICATA_UNATTENDED` 1/true/yes/on (other values ignored) or block mode (`gate(stop)`:
+  `JUDICATA_GATE` warn/block over the given `[stop]`; round close uses the round's `round_started.stop`, verify plan
+  and `verifier.gate` the contract). `rounds.evaluate(..., unattended)` takes the mode, so `round close` and `round
+  report` agree. Unattended, `round close` does not raise `decision_needed`: `records()` stores
+  the open decisions in `round_closed.waiting` ({kind criterion, criterion, criterion_hash, basis} or {kind finding,
+  fingerprint, reason unconfirmed|represented, verifier inconclusive|unverified|discarded|not_planned}), each adds to
+  `open_blockers` and prevents done; `continue` becomes `waiting_for_decision` (`stop.WAITING`, not in `ENDS`),
+  focused = `focus_open`. Output `unattended` and `waiting_for_decision` (`shown()`: round, kind, question,
+  decide_with, texts via untrusted). `pending()` (status, session, gate) = per (kind, id) the latest closed round
+  that stored it, while it still waits: a finding open, unsettled, not refuted and last recorded by that round (or
+  represented, still in the register, undecided there and no later covering round); a criterion without a
+  non-lapsed `verdict_decided` in that round, no later covering round (`covers`: whole contract or same `stop.key`)
+  with a result of the same hash and still in the contract with that hash. `carried()`: what earlier rounds left
+  waiting and the closing round does not settle counts in its `open_blockers` and `waiting_for_decision` too.
+  `review decide` takes a closed round only for such a criterion (`criterion_state`; an older round that a later
+  waiting round replaced = `stale_round`), otherwise `round_closed` as before; `finding decide` on a closed round
+  already worked. `verify plan` has `unattended` and `ask_more` false when unattended. Session context: a rule to ask them
+  first, and the section "Waiting for your decision" (command first, then question and subject) before the
+  contracts; the gate adds them to the line of (a).
 - `untrusted.py` (#34): text from the repo (ledger, contract) is never trusted; it is never blocked but detected,
   marked and defused. `clean(text, limit)`: one line, about `limit` characters with the note `[cut, N characters]`,
   control, format, bidi, private use, unassigned and invisible filler characters removed, code fences (```/~~~)
@@ -343,6 +380,9 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `criterion X of contract C`, `contract file C`, `project path`. How a field is checked is defined by
   `options(field)` (names and paths are never "too long" and never "encoded", `text`/`evidence`/`quote` may span
   several lines, quotes are code: without shell, fences, blobs), a `command` does not count as a shell command.
+  Long text: over `LONG_TEXT` (400) characters, the reasons of reviewers and verifiers (`REASONING`:
+  `verdicts.reason`, `verification.reason`) over `REASON_TEXT` (1,500, #32; the output schemas take reasons
+  and finding evidence up to 1,500 characters); cleaning limits unchanged.
   Scan and `clean` read only the first `SCAN_LIMIT` characters, longer text is always `long_text` (what is shown
   was also checked). Outputs with `warnings`: `Finding.public()` (`finding list`, `earlier`, `round close`, later
   status), `rounds.with_state`, `round close` per criterion (also verdicts via `untrusted.judged`),
@@ -440,7 +480,8 @@ scope, focus, stop (missing in old rounds: whole contract, no focus, default sto
 outcome, open_blockers (criteria plus blocking findings plus unconfirmed unmet required criteria), focused, pass,
 round_in_pass, accepted_risks (count), required_unmet [{criterion, criterion_hash, text, check, findings
 [{fingerprint, label, state, section_hash, decision {event, round, decision, reason, reopen_condition}}]}],
-unmet_hash, confirmation {event, round, ts} or null}, `finish_confirmed` {round, contract, unmet_hash,
+unmet_hash, confirmation {event, round, ts} or null, waiting [...] and unattended (reason or null, #29, see
+`waiting.py`)}, `finish_confirmed` {round, contract, unmet_hash,
 required_unmet}, `finding_recorded` {round, contract, fingerprint, category, severity, consensus, blocking,
 address, label, section_hash, file, line, summary, sightings[...]}, `contract_version` {contract, version (1, 2,
 ... per name), contract_hash, template, paths, reviewers, stop, criteria[{id, text, check, required, params,
@@ -468,7 +509,8 @@ and without a recommendation, reviewers in parallel, verifiers, then `round repo
 every finding with its number, what happens next) before any question about the round, disagreements and decisions
 on findings with at most four per AskUserQuestion, each naming the finding by number (a bulk option only in
 addition), reason and suggested reopen condition, close, report; without a contract or with `unmatched`
-it reads the interview from `contract`; report with the round within the pass and the result of the stop rule),
+it reads the interview from `contract`; report with the round within the pass and the result of the stop rule;
+unattended runs ask nothing and close with `--unattended`, decisions waiting from such a run are asked first),
 `contract` (show, interview with AskUserQuestion, the default is always the first option = Enter; change only on
 explicit request: `contract change` shows the difference, AskUserQuestion confirms, then `--confirm`; with changed
 commands "Not now" first) and `status` (`/judicata:status`, only calls `status`, report in the language of the
@@ -551,7 +593,8 @@ review skill puts it before every question), `test_stop_gate.py` (via `project.h
 and Codex form, and without one after a SessionStart), `test_stop_gate_block.py` (block mode, limit, environment), `test_revision.py` also without `git`
 in PATH, `test_stop_rule.py`, `test_status.py`, `test_required_unmet.py`), `test_prompt_injection.py` (detection
 `project.script`, frontmatter), `test_review_focus.py`, `test_revision.py` also without `git`
-in PATH, `test_stop_rule.py`, `test_status.py`, `test_required_unmet.py`, `test_verifier.py` with outputs from `tests/fixtures/verifier/`), `test_prompt_injection.py` (detection
+in PATH, `test_stop_rule.py`, `test_status.py`, `test_required_unmet.py`, `test_verifier.py` with outputs from `tests/fixtures/verifier/`,
+`test_unattended_decisions.py`), `test_prompt_injection.py` (detection
 with attack and harmless examples, marking in hook, plan, list, contract, status), `test_text_cleaning.py`
 (defusing). `core/ok/fail` take `stdin=` (dict as JSON, str, bytes); `proposal()` fills a template proposal like
 the interview does. Reviewer outputs are fixtures in `tests/fixtures/reviewer/`, they quote

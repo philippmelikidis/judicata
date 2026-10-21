@@ -22,23 +22,31 @@ After an unfocused round, in this order:
                  below the round before (the first round of a pass is only the
                  starting value: with stall_rounds 2, round 3 at the earliest)
   round_limit    the round is round max_rounds of its pass
-  continue       otherwise (required_unmet: only unmet required criteria left)
+  continue       otherwise (required_unmet: only unmet required criteria left;
+                 waiting_for_decision: an unattended round closed with open
+                 decisions, which count as open blockers, see waiting.py)
 A finish confirmed after the round closed (finish_confirmed) turns its
 required_unmet into done_with_unmet_required (Round.outcome), which ends the pass.
 The limits come from the contract when the round started (round_started.stop;
 rounds before #14 use the defaults). open_blockers per round is the count that
-round_closed recorded.
+round_closed recorded: since #32 one per blocking place (a criterion failing
+at four places counts four, round_closed.blockers_counted = "places"); rounds
+closed before counted a failed criterion once. Those older counts are not
+comparable, so stalled rounds are counted only over the rounds at the end of a
+pass that count the same way (comparable()); the list per round shows all.
 """
 
 from . import assignment, contract, narrow, states
 
 REQUIRED_UNMET = "required_unmet"
 DONE_UNMET = "done_with_unmet_required"
+WAITING = "waiting_for_decision"
 ENDS = ("done", DONE_UNMET, "not_converged", "round_limit")
 LABELS = {
     "done": "done",
     DONE_UNMET: "finished despite unmet required criteria",
     REQUIRED_UNMET: "required criteria not met",
+    WAITING: "waiting for your decision",
     "continue": "continue",
     "not_converged": "not converged",
     "round_limit": "round limit reached",
@@ -118,6 +126,24 @@ def ended(rounds_of_pass: list) -> bool:
     return bool(rounds_of_pass) and rounds_of_pass[-1].outcome in ENDS
 
 
+PER_PLACE = "places"  # round_closed.blockers_counted since #32
+
+
+def counting(found) -> str | None:
+    """How a closed round counted its open blockers (None: per criterion)."""
+    value = (found.closed or {}).get("blockers_counted")
+    return value if isinstance(value, str) else None
+
+
+def comparable(kinds: list) -> int:
+    """Where the rounds at the end of a pass that count their open blockers
+    the same way as the last one start."""
+    start = len(kinds)
+    while start > 0 and kinds[start - 1] == kinds[-1]:
+        start -= 1
+    return start
+
+
 def stalled(counts: list[int]) -> int:
     """How many rounds at the end of a pass did not lower the open blockers
     below the round before. The first round of a pass is the starting value."""
@@ -145,7 +171,7 @@ def judge(
         number, prior = len(earlier) + 1, []
     counts = [blockers(r) for r in prior] + [open_blockers]
     bounds = limits(current_round)
-    run = stalled(counts)
+    run = stalled(counts[comparable([counting(r) for r in prior] + [PER_PLACE]) :])
     if done:
         outcome = "done"
     elif run >= bounds["stall_rounds"]:

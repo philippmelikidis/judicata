@@ -23,7 +23,7 @@
       "description": "One line: why.",
       "type": "string",
       "minLength": 1,
-      "maxLength": 500
+      "maxLength": 1500
     },
     "counter_evidence": {
       "description": "Only for refuted, at least one entry: a quote from a file in scope that handles the case, or a passing approved command with a line of its output. A refutation without valid counter-evidence counts as inconclusive.",

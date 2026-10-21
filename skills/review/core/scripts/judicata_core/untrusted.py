@@ -18,7 +18,9 @@ scan(text)          the reasons a text looks like a prompt injection, a
                     shell commands, changing settings or permissions, secrecy,
                     exfiltration, hidden characters, line breaks, code fences,
                     tags like <system>, encoded blobs, lookalike letters mixed
-                    into a word, spaced out letters, long texts. Patterns run
+                    into a word, spaced out letters, long texts (over
+                    LONG_TEXT characters; REASON_TEXT for the reasons of
+                    reviewers and verifiers, REASONING). Patterns run
                     on a normalized form (NFKC, hidden characters dropped,
                     lookalike letters mapped, casefolded; separators such as _
                     and - read as spaces), so the usual tricks do not hide a
@@ -41,6 +43,8 @@ TEXT_LIMIT = 200  # ledger text: summaries, reasons, reopen conditions
 LABEL_LIMIT = 150  # labels and paths in the hook context
 CRITERION_LIMIT = 400  # criterion texts: the reviewers judge against them
 LONG_TEXT = 400  # longer free text is suspicious in itself
+REASON_TEXT = 1_500  # the reasons of reviewers and verifiers may say more (#32)
+REASONING = ("verdicts.reason", "verification.reason")
 SCAN_LIMIT = 20_000  # characters read at all: scan and clean see the same prefix
 EXCERPT = 80
 DATA_OPEN = "<judicata-data>"
@@ -329,6 +333,8 @@ def options(field: str) -> dict:
         skip += CODE_SKIP
     if field.startswith("sightings."):
         long = None  # the reviewer output schema bounds them
+    if field in REASONING:
+        long = REASON_TEXT
     return {"long": long, "skip": tuple(skip)}
 
 
@@ -429,6 +435,9 @@ def finding(entry: dict, info_event: str | None = None) -> list[dict]:
                 {f"sightings.{k}": sighting.get(k) for k in SIGHTING_TEXT},
             )
     found += verification(entry.get("verification"))
+    for item in entry.get("merged") or []:  # reviewer findings merged in (#32)
+        if isinstance(item, dict):
+            found += [w for w in finding(item) if w not in found]
     return found
 
 
@@ -492,6 +501,8 @@ def shown(entry: dict) -> dict:
         ]
     if isinstance(out.get("verification"), dict):
         out["verification"] = _verification_shown(out["verification"])
+    if isinstance(out.get("merged"), list):
+        out["merged"] = [shown(m) if isinstance(m, dict) else m for m in out["merged"]]
     return out
 
 
