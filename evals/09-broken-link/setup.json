@@ -1,0 +1,18 @@
+{
+  "contract": {
+    "name": "docs",
+    "template": "docs",
+    "paths": ["docs/**"],
+    "reviewers": {"count": 1, "models": ["inherit"]},
+    "stop": {"max_rounds": 5, "stall_rounds": 2},
+    "criteria": [
+      {
+        "id": "DOCS-1",
+        "text": "Every relative link, anchor, image and citation key points to something that exists",
+        "check": "references",
+        "required": true
+      }
+    ]
+  },
+  "rounds": []
+}

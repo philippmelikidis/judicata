@@ -1,0 +1,71 @@
+schema_version: "1.0"
+name: verifier-refutes-a-wrong-blocker
+description: >
+  The verifier refutes a blocker that is wrong. src/weather/stats.py has a
+  place that only looks broken: latest(readings, 0) would return every
+  reading, because readings[-0:] is the whole list. The only caller,
+  recent() in src/weather/report.py, returns an empty list for a count
+  below 1 before it calls latest(), so the case never happens. The scaffold
+  leaves a round for stats.py open, as a session that ended in the middle of
+  a review: its reviewer (a fixture, because a live reviewer that reads the
+  caller rates the slice should-fix) reported the slice as a correctness
+  blocker. The agent finishes that round: a verifier, which reads the whole
+  contract scope, must refute the blocker with the guard as
+  counter-evidence, so it becomes a note and the file is done.
+tags: [v0.2, verifier]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: |
+    My last session ended in the middle of a review of src/weather/stats.py:
+    the reviewer had already answered, but the round is still open. Please
+    finish that round and tell me whether the file is done. I can't answer
+    follow-up questions right now, so leave anything that needs my decision
+    open.
+  max_turns: 50
+  timeout_seconds: 1200
+  allowed_tools: [Skill, Agent, Bash, Read, Glob, Grep]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: same-round-finished
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_started"'
+    match: "count:1"
+  - name: verifier-planned
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"verifiers_planned",[^\n]*"runs": ?\[\{'
+  - name: blocker-refuted
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"verifier_verdict",[^\n]*"verdict": ?"refuted",[^\n]*"counter_evidence": ?\[\{[^\n]*"file": ?"src/weather/report\.py"'
+  - name: verifier-independent
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"verifier_verdict",[^\n]*"independent": ?true'
+  - name: round-done
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_closed",[^\n]*"outcome": ?"done"'
+  - name: no-decision-made-for-the-user
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"finding_decided"'
+    match: not_contains
+  - name: reports-refuted-blocker
+    type: llm
+    criteria: |
+      The user asked whether src/weather/stats.py is done. In that file
+      latest(readings, 0) would return every reading (readings[-0:] is the
+      whole list), but the only caller, recent() in src/weather/report.py,
+      returns an empty list for a count below 1 first, so that never happens.
+      PASS only if the reply says the file is done (done with a note is fine)
+      and reports that a blocker about latest() with a count of 0 was
+      refuted (or challenged and dropped) by a verifier, with the guard in
+      report.py (count below 1) as the reason or evidence. It must not
+      present that point as an open blocker or as something the user has to
+      fix.

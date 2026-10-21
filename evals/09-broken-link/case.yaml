@@ -1,0 +1,57 @@
+schema_version: "1.0"
+name: broken-link-is-not-done
+description: >
+  A docs artifact with a broken link is not done. The contract of docs/ has
+  one required references criterion (DOCS-1). docs/index.md links to
+  install.md, to its Requirements heading and to configuration.md, which
+  does not exist. The references check finds the broken link without a
+  model: the round closes with DOCS-1 failed at that line as an open
+  blocker, and nothing is fixed or decided for the user.
+tags: [v0.2, references]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: |
+    Are the docs in docs/ done? I can't answer follow-up questions right
+    now, so leave anything that needs my decision open.
+  max_turns: 40
+  timeout_seconds: 900
+  allowed_tools: [Skill, Agent, Bash, Read, Glob, Grep]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+  - name: references-failed
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"criterion_result",[^\n]*"criterion": ?"DOCS-1",[^\n]*"passed": ?false,[^\n]*"reference": ?"configuration\.md"'
+  - name: round-not-done
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"round_closed",[^\n]*"outcome": ?"continue",[^\n]*"open_blockers": ?[1-9]'
+  - name: blocker-at-the-link
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"finding_recorded",[^\n]*"category": ?"DOCS-1",[^\n]*"severity": ?"blocker"[^\n]*"file": ?"docs/index\.md"'
+  - name: no-decision-made-for-the-user
+    type: regex
+    target: {source: file, path: .judicata/ledger.jsonl}
+    pattern: '"type": ?"finding_decided"'
+    match: not_contains
+  - name: link-left-alone
+    type: regex
+    target: {source: file, path: docs/index.md}
+    pattern: '\[Configuration\]\(configuration\.md\)'
+  - name: reports-broken-link
+    type: llm
+    criteria: |
+      The docs in docs/ have one broken link: docs/index.md line 8 links to
+      configuration.md, which does not exist. The project's contract has a
+      required criterion DOCS-1: every relative link, anchor, image and
+      citation key points to something that exists.
+      PASS only if the reply says the docs are not done, names the broken
+      link to configuration.md (in docs/index.md, the line is a plus) as the
+      blocker or the failed DOCS-1 criterion, and does not claim the docs
+      are done. The link to install.md#requirements is fine and must not be
+      reported as broken.

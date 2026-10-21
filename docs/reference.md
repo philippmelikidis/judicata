@@ -409,7 +409,7 @@ core). Never edit the copies by hand: after changing the source run
 repository root has no `skills-lock.json` (the installer would take the copies as installed);
 the tool checks both. When Codex runs inside this repository it also lists the copies as
 repository skills; users do not see them. The behavior of the plugin in Claude Code (skills,
-reviewer agent, hook) is checked by five acceptance evals in `evals/`, run with
+reviewer agent, verifier agent, hooks) is checked by eight acceptance evals in `evals/`, run with
 `claude plugin eval` against the plugin and, as a baseline, against Claude without it:
 
 | Case | Checks |
@@ -419,20 +419,26 @@ reviewer agent, hook) is checked by five acceptance evals in `evals/`, run with
 | `03-required-blocker` | a failed required criterion is a blocker, nothing is fixed or decided |
 | `04-not-converged` | a third round without progress ends as "not converged" |
 | `05-module-scope` | "Prüf das Modul ledger" reviews exactly that module |
+| `07-gate-block` | in block mode the stop gate keeps an agent from claiming done after an unreviewed edit; it ends with `judicata: not done` |
+| `08-verifier-refutes` | a verifier refutes a wrong blocker with the guard in the caller as counter-evidence, the file is done |
+| `09-broken-link` | a docs artifact with a broken link is not done (`references` criterion, no model) |
 
 Each case prepares a throwaway project with `scaffold.sh` (artifact from `project/`, contract
 and earlier rounds from `setup.json`, written through the core, see `evals/_lib/scaffold.py`).
-Most graders read `.judicata/ledger.jsonl` after the run, so they are deterministic; one LLM
-grader per case reads the final answer. The evals cost tokens and do not run in CI. From the
+Most graders read `.judicata/ledger.jsonl` after the run, so they are deterministic (in
+`07-gate-block` a regex also reads the last line of the final answer); one LLM grader per case
+reads the final answer. Eval cases can set only `EVAL_*` variables, so `07-gate-block` sets
+`gate = "block"` in its contract instead of `JUDICATA_GATE`. The evals cost tokens and do not run in CI. From the
 repository root:
 
 ```
-claude plugin eval . --scaffold --allow-tools Bash --trust-plugin --runs 1 --no-publish
+claude plugin eval . --scaffold --allow-tools Bash Edit --trust-plugin --runs 1 --no-publish
 ```
 
 `--scaffold` runs the case scripts, `--allow-tools Bash` lets the skills call the core
-(sandboxed: on Linux this needs `bwrap` and `socat` on `PATH`), `--case '<name glob>'` runs
-one case, `--ablation none` skips the baseline. Results land in `evals/results/` (ignored by
+(sandboxed: on Linux this needs `bwrap` and `socat` on `PATH`), `Edit` lets the agent of
+`07-gate-block` make the edit the user asks for, `--case '<name glob>'` runs one case (by the
+`name` in its `case.yaml`), `--ablation none` skips the baseline. Results land in `evals/results/` (ignored by
 Git).
 
 `measure/measure.py` compares judicata with plain Claude Code over the eval cases and small repositories with
