@@ -22,7 +22,9 @@ After an unfocused round, in this order:
                  below the round before (the first round of a pass is only the
                  starting value: with stall_rounds 2, round 3 at the earliest)
   round_limit    the round is round max_rounds of its pass
-  continue       otherwise (required_unmet: only unmet required criteria left)
+  continue       otherwise (required_unmet: only unmet required criteria left;
+                 waiting_for_decision: an unattended round closed with open
+                 decisions, which count as open blockers, see waiting.py)
 A finish confirmed after the round closed (finish_confirmed) turns its
 required_unmet into done_with_unmet_required (Round.outcome), which ends the pass.
 The limits come from the contract when the round started (round_started.stop;
@@ -34,11 +36,13 @@ from . import assignment, contract, narrow, states
 
 REQUIRED_UNMET = "required_unmet"
 DONE_UNMET = "done_with_unmet_required"
+WAITING = "waiting_for_decision"
 ENDS = ("done", DONE_UNMET, "not_converged", "round_limit")
 LABELS = {
     "done": "done",
     DONE_UNMET: "finished despite unmet required criteria",
     REQUIRED_UNMET: "required criteria not met",
+    WAITING: "waiting for your decision",
     "continue": "continue",
     "not_converged": "not converged",
     "round_limit": "round limit reached",

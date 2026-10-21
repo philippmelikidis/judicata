@@ -35,6 +35,9 @@ the ledger knows, sorted by name):
                 makes one block again
   accepted_risks, rejected   the register with reason and reopen condition
   counts        findings per state
+  waiting_for_decision  decisions an unattended round left to the user, each
+                with round, kind (criterion or finding), question, decide_with
+                and what to show (waiting.py); they count as open blockers
 Writes nothing, also no .judicata/.
 """
 
@@ -47,6 +50,7 @@ from . import (
     stop,
     untrusted,
     verification,
+    waiting,
 )
 from .errors import JudicataError
 from .project import Project
@@ -162,6 +166,7 @@ def _contract(
             if i.state == "rejected"
         ],
         "counts": counts,
+        "waiting_for_decision": waiting.pending(all_rounds, found, name, current),
     }
 
 

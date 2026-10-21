@@ -13,7 +13,6 @@ such a passing command with a line of its output, or quote a file in scope.
 """
 
 import json
-import os
 import uuid
 from pathlib import Path
 
@@ -27,6 +26,7 @@ from . import (
     states,
     untrusted,
     verification,
+    waiting,
 )
 from .errors import JudicataError
 from .project import Project
@@ -35,24 +35,24 @@ from .scope import Scope
 SCHEMA_FILE = Path(__file__).with_name("verifier_output.schema.json")
 OUTPUT_LIMIT = 2000  # characters of a command's output in the task
 MAX_STORED_PROBLEMS = 20
-GATE_ENV = "JUDICATA_GATE"  # warn or block for this run, over the contract's gate
+GATE_ENV = waiting.GATE_ENV  # warn or block for this run, over the contract's gate
 
 
 def gate(current: contract.Contract) -> dict:
     """The gate mode of this run: JUDICATA_GATE if set to warn or block (an
     unattended run sets block), else the contract's [stop] gate."""
-    value = os.environ.get(GATE_ENV, "").strip().lower()
-    if value in contract.GATES:
-        return {"mode": value, "source": GATE_ENV}
-    return {"mode": current.stop["gate"], "source": "contract"}
+    return waiting.gate(current.stop)
 
 
 def output_schema() -> dict:
     return json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
 
 
-def plan(project: Project, round_id: str) -> dict:
-    """Fix the verifier runs of a round, once every reviewer run is in."""
+def plan(project: Project, round_id: str, unattended: bool = False) -> dict:
+    """Fix the verifier runs of a round, once every reviewer run is in.
+
+    unattended (or JUDICATA_UNATTENDED, or block mode, waiting.py): nobody
+    can answer, so ask_more is false."""
     events = ledger.read(project)
     all_rounds = rounds.replay(events)
     current_round = rounds.open_round(project, round_id, all_rounds)
@@ -133,13 +133,15 @@ def plan(project: Project, round_id: str) -> dict:
             }
         )
     mode = gate(current)
+    alone = waiting.unattended(current.stop, unattended)
     return {
         "round": round_id,
         "contract": current.name,
         "gate": mode,
+        "unattended": alone,
         # over the limit: ask the user once whether to verify the rest (default
-        # no), only when someone can answer (never in block mode)
-        "ask_more": bool(stored["unverified"]) and mode["mode"] == "warn",
+        # no), only when someone can answer (never in block mode or unattended)
+        "ask_more": bool(stored["unverified"]) and not alone["unattended"],
         "model": untrusted.clean(stored["model"], 100),
         "max_runs": stored["max_runs"],
         "candidates": stored["candidates"],

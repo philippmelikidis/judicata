@@ -12,7 +12,8 @@ every contract the session touched:
       accepted risks, finished despite unmet required criteria, not
       converged, round limit), and no later round of the contract with the
       same scope or the whole contract did; a round not closed and a focused
-      round count as not final;
+      round count as not final; the line also names the decisions waiting
+      for the user (waiting.py, an unattended round closed with them);
   (b) per scope, the latest final round that no later round covers: files of
       its scope were written in the session after it last looked at them
       (file times at or after the session start and its last check; a
@@ -338,7 +339,7 @@ def check(project: Project, hook_input: dict) -> list[Problem]:
                 if report is None:
                     shown = status.show(project, None)["contracts"]
                     report = {c["contract"]: c for c in shown}
-                text += _blockers(report.get(name))
+                text += _blockers(report.get(name)) + _waiting(report.get(name))
             elif current is not None and begun is not None:
                 text = _changed(project, events, current, own, begun)
         except Exception:  # noqa: BLE001 (one contract never hides the others)
@@ -408,6 +409,26 @@ def _blockers(entry: dict | None) -> str:
         return ""
     more = len(names) - SHOWN
     return f" ({', '.join(names[:SHOWN])}" + (f" and {more} more)" if more > 0 else ")")
+
+
+def _waiting(entry: dict | None) -> str:
+    """The decisions an unattended round left to the user (waiting.py)."""
+    names = []
+    for item in (entry or {}).get("waiting_for_decision", []):
+        if item.get("kind") == "criterion":
+            shown = _text(item.get("criterion"), 60)
+        else:
+            shown = _text(item.get("label"), 80)
+        if shown not in names:
+            names.append(shown)
+    if not names:
+        return ""
+    more = len(names) - SHOWN
+    return (
+        f"; {len(names)} waiting for your decision ({', '.join(names[:SHOWN])}"
+        + (f" and {more} more)" if more > 0 else ")")
+        + ", only the user can decide them"
+    )
 
 
 def _changed(

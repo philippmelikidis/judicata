@@ -140,8 +140,8 @@ counter-evidence still holds. A changed place or criterion gets a new run. At mo
 new runs per round (default 5), most severe first; the rest stay blockers. In an interactive
 run the report says "N of M blockers verified" and asks once whether to verify the rest
 (default no). In block mode (`[stop] gate = "block"` or the environment variable
-`JUDICATA_GATE=block` for unattended runs, which overrides the contract) it never asks and
-lists the unverified blockers. Where the host has no sub-agents, the session verifies itself
+`JUDICATA_GATE=block` for unattended runs, which overrides the contract) and in other
+[unattended runs](#unattended-runs) it never asks and lists the unverified blockers. Where the host has no sub-agents, the session verifies itself
 and the report says it was not independent.
 
 Before judicata asks you anything about a round, it shows the whole round (`round report`): one
@@ -260,6 +260,36 @@ Plain skills cannot ship hooks. Every judicata skill tells the agent to run the 
 it says that work under a contract is done, and to say plainly that it is not done otherwise.
 That holds once a judicata skill ran in the conversation, and it is an instruction, not a
 check: ask for the status yourself before you trust a done.
+
+### Unattended runs
+
+Some decisions only you can make: reviewers disagree on a judgment criterion, a blocker only
+one reviewer saw and the verifier could not decide (or did not verify, over its limit), or a
+finding you decided earlier whose place changed. In an interactive session the review asks
+you before it closes the round. In an unattended run nobody can answer, so the round closes
+anyway and these decisions wait for you:
+
+- A run counts as unattended in block mode (`[stop] gate = "block"` or `JUDICATA_GATE=block`;
+  `JUDICATA_GATE=warn` makes a blocking contract interactive again), with
+  `JUDICATA_UNATTENDED=1` (also `true`, `yes`, `on`; other values are ignored) in the
+  environment, or when the review skill closes with `round close --unattended` because it
+  cannot ask (for example in `claude -p` or `codex exec`).
+- Each open decision counts as an open blocker: the round is never done, the stop rule
+  counts it (a pass that keeps waiting ends as not converged), and the outcome is "waiting
+  for your decision" while the pass goes on. The stop gate treats it like any open blocker
+  and names the decisions.
+- The round report (under what happens next), `/judicata:status` and the summary of the next
+  session list them as "waiting for your decision", each with what to decide and the round it
+  belongs to. A later review lists the ones still open from earlier rounds in its report too,
+  and they count as its open blockers until you decide them. The next session
+  where you can answer asks them first; your answers are recorded on that closed round, and
+  the next review applies them (an agreed verdict holds while the files it covered are
+  unchanged, a rejected finding while its place is unchanged).
+- Interactive sessions behave as before, also in block mode: the review asks before it
+  closes.
+
+As plain skills the same happens in the core; there is no hook, so the review and status
+skills read the waiting decisions themselves when they run, and no gate names them.
 
 ## Codex
 
