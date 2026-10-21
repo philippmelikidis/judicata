@@ -27,9 +27,8 @@
     "decided": []
   },
   "07-gate-block": {
-    "done": false,
-    "bugs": [{"id": "todo", "file": "src/shop/cart.py", "line": 6, "keywords": ["TODO"]}],
-    "decided": []
+    "measure": false,
+    "why": "the prompt asks for an edit, which the measurement forbids (no Edit or Write)"
   },
   "08-verifier-refutes": {"done": true, "bugs": [], "decided": []},
   "09-broken-link": {

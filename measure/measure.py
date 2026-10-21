@@ -7,7 +7,8 @@ same prompts; the plain arm gets the artifact without `.judicata/`. The corpus:
 
 - eval cases (`evals/<case>/`, `eval/<case>`): the artifact and, for judicata,
   the contract and earlier rounds played by `evals/_lib/scaffold.py`. Truth in
-  `measure/evals.json`. One fresh session per trial.
+  `measure/evals.json`; a truth with "measure": false (and "why") leaves the
+  case out. One fresh session per trial.
 - seeded cases (`measure/seeded/<case>/`, `seeded/<case>`): a clean project plus
   mutations from `case.json`. Each trial applies a pick of the bug mutations
   (seeded random) and the decoys, then plays rounds: a fresh review session, the
@@ -193,6 +194,8 @@ def load_cases(args: argparse.Namespace) -> list[Case]:
         if case_dir.name not in truth:
             raise Usage(f"{name}: no truth in {truth_path.name}")
         entry = truth[case_dir.name]
+        if entry.get("measure") is False:  # e.g. the prompt asks for an edit
+            continue
         cases.append(
             Case(
                 name=name,

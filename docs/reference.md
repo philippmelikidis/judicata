@@ -437,7 +437,7 @@ reviewer agent, verifier agent, hooks) is checked by nine acceptance evals in `e
 Each case prepares a throwaway project with `scaffold.sh` (artifact from `project/`, contract
 and earlier rounds from `setup.json`, written through the core, see `evals/_lib/scaffold.py`).
 Most graders read `.judicata/ledger.jsonl` after the run, so they are deterministic (in
-`07-gate-block` a regex also reads the last line of the final answer); one LLM grader per case
+`07-gate-block` regexes also read the trace for the gate's block and the last line of the final answer); one LLM grader per case
 reads the final answer. Eval cases can set only `EVAL_*` variables, so `07-gate-block` sets
 `gate = "block"` in its contract instead of `JUDICATA_GATE`. The evals cost tokens and do not run in CI. From the
 repository root:

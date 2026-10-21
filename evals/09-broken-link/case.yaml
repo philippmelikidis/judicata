@@ -29,7 +29,7 @@ graders:
   - name: round-not-done
     type: regex
     target: {source: file, path: .judicata/ledger.jsonl}
-    pattern: '"type": ?"round_closed",[^\n]*"outcome": ?"continue",[^\n]*"open_blockers": ?[1-9]'
+    pattern: '"type": ?"round_closed",[^\n]*"outcome": ?"(?!done)[a-z_]+",[^\n]*"open_blockers": ?[1-9]'
   - name: blocker-at-the-link
     type: regex
     target: {source: file, path: .judicata/ledger.jsonl}

@@ -573,14 +573,14 @@ The eval has no AskUserQuestion: the prompts therefore say "no follow-up questio
 contracts have no command criteria (no approval needed) and one reviewer. `execution.env` takes only `EVAL_*`
 keys, so block mode comes from the contract (`07-gate-block`, `gate = "block"`). v0.2 cases: `06-round-report` (the report before any question),
 `07-gate-block`
-(an edit adds a TODO after a done round, the gate blocks the false done, the answer ends with
-`judicata: not done`, regex on `last_message`; `Edit` is needed only here), `08-verifier-refutes` (the
+(an edit adds a TODO after a done round, the gate blocks the false done (regex on `trace` for its block message), the answer ends with
+`judicata: not done` (regex on `last_message`, the gate's `HONEST` rule); `Edit` is needed only here), `08-verifier-refutes` (the
 user names one file, so the reviewer sees `latest(readings, 0)` without its caller's guard; the verifier
 reads the whole contract scope and refutes with a quote from the caller), `09-broken-link` (`references`).
 
 **Measurement** (`measure/`, #9): `measure/measure.py` compares judicata with plain Claude Code for the README
 numbers, maintainers only, not shipped, not in CI. Corpus: the eval cases (judicata arm via `evals/_lib/scaffold.py`,
-plain arm only the artifact; truth in `measure/evals.json`) and seeded cases `measure/seeded/<case>/` (`project/`
+plain arm only the artifact; truth in `measure/evals.json`, `"measure": false` leaves a case out) and seeded cases `measure/seeded/<case>/` (`project/`
 plus `case.json` with bug and decoy mutations, applied in a throwaway folder). Both arms run `claude -p`
 (`--setting-sources project,local --strict-mcp-config`, `dontAsk`, Bash in Claude Code's sandbox, every shell
 command only with `--allow-bash`, Edit/Write denied), the

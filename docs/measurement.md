@@ -24,7 +24,8 @@ The corpus:
 
 - **Eval cases** (`evals/<case>/`, names `eval/<case>`): the judicata arm gets the project from the case's
   scaffold (artifact, contract, earlier rounds and decisions), the plain arm only the artifact. Truth per case
-  in `measure/evals.json` (expected done, seeded bugs, points decided earlier). One fresh session per trial.
+  in `measure/evals.json` (expected done, seeded bugs, points decided earlier); `"measure": false` leaves a case
+  out (`07-gate-block`: its prompt asks for an edit, which the measurement forbids). One fresh session per trial.
 - **Seeded cases** (`measure/seeded/<case>/`, names `seeded/<case>`): a small clean project plus mutations in
   `case.json`. Each trial applies `pick` of the bug mutations (chosen by `--seed`) and every decoy (code that
   looks odd but is intended, with the user's reason). Generated in a throwaway folder at run time, never
