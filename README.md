@@ -182,6 +182,10 @@ flowchart LR
   criterion or outside the contract, one short read-only run each (at most 5 per round, more
   only if you say yes). A blocker it refutes with concrete counter-evidence becomes a note you
   can reopen. Its verdict holds in later rounds while the place is unchanged.
+- **You see the round before you decide.** Before any question, judicata shows the result in
+  one line, every criterion and every finding on its own with a number, place, evidence and
+  whether it is new or came back, and what happens next. Each question names its findings by
+  number. The same in Claude Code, Codex and plain skill installs.
 - **The core is a plain Python command line.** Skills and hooks only call it, so the same rules
   apply in every host and every session.
 
@@ -313,7 +317,7 @@ differ from the source. Every change to shipped files (manifest, skills, agents,
 scripts, templates) needs an entry under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) or a
 higher version in `.claude-plugin/plugin.json`; `python3 tools/check_version.py` checks this in
 CI. To release: raise the version, move the Unreleased entries under it, tag `v<version>`.
-Eight acceptance evals in `evals/` check the plugin's
+Nine acceptance evals in `evals/` check the plugin's
 behavior in Claude Code against a baseline without the plugin. See
 [Development](docs/reference.md#development).
 

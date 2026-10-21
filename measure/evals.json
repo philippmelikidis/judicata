@@ -17,5 +17,26 @@
     "bugs": [{"id": "todo", "file": "src/shop/cart.py", "line": 6, "keywords": ["TODO"]}],
     "decided": []
   },
-  "05-module-scope": {"done": true, "bugs": [], "decided": []}
+  "05-module-scope": {"done": true, "bugs": [], "decided": []},
+  "06-round-report": {
+    "done": false,
+    "bugs": [
+      {"id": "todo", "file": "src/billing/export.py", "line": 11, "keywords": ["TODO"]},
+      {"id": "fixme", "file": "src/billing/export.py", "line": 20, "keywords": ["FIXME"]}
+    ],
+    "decided": []
+  },
+  "07-gate-block": {
+    "done": false,
+    "bugs": [{"id": "todo", "file": "src/shop/cart.py", "line": 6, "keywords": ["TODO"]}],
+    "decided": []
+  },
+  "08-verifier-refutes": {"done": true, "bugs": [], "decided": []},
+  "09-broken-link": {
+    "done": false,
+    "bugs": [
+      {"id": "broken-link", "file": "docs/index.md", "line": 8, "keywords": ["configuration.md"]}
+    ],
+    "decided": []
+  }
 }

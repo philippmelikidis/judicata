@@ -144,6 +144,16 @@ run the report says "N of M blockers verified" and asks once whether to verify t
 lists the unverified blockers. Where the host has no sub-agents, the session verifies itself
 and the report says it was not independent.
 
+Before judicata asks you anything about a round, it shows the whole round (`round report`): one
+line with the round of the pass, the outcome, the findings by severity and the open blockers
+per round (for example 6 -> 4 -> 3); every criterion, passed or failed with the reason; every
+finding on its own with a number, its place, what is wrong, the evidence, how many reviewers
+saw it, the verifier's verdict and whether it is new or came back (and why: its place changed,
+the fix did not hold); and what happens next (what you decide, what is to be fixed, when the
+next round runs, where the stop rule stands). Each question then names its findings by number,
+at most four per question; "fix all" is only ever an extra option. In hosts without a question
+tool the questions follow the report as a numbered list.
+
 After each review you decide the findings: fix, reject or accept the risk (the last two with a
 one-line reason and a condition under which the finding counts again). These decisions hold in
 every later session. A rejected or accepted finding that a reviewer reports again at the same,
@@ -409,7 +419,7 @@ core). Never edit the copies by hand: after changing the source run
 repository root has no `skills-lock.json` (the installer would take the copies as installed);
 the tool checks both. When Codex runs inside this repository it also lists the copies as
 repository skills; users do not see them. The behavior of the plugin in Claude Code (skills,
-reviewer agent, verifier agent, hooks) is checked by eight acceptance evals in `evals/`, run with
+reviewer agent, verifier agent, hooks) is checked by nine acceptance evals in `evals/`, run with
 `claude plugin eval` against the plugin and, as a baseline, against Claude without it:
 
 | Case | Checks |
@@ -419,6 +429,7 @@ reviewer agent, verifier agent, hooks) is checked by eight acceptance evals in `
 | `03-required-blocker` | a failed required criterion is a blocker, nothing is fixed or decided |
 | `04-not-converged` | a third round without progress ends as "not converged" |
 | `05-module-scope` | "Prüf das Modul ledger" reviews exactly that module |
+| `06-round-report` | the round report (result, criteria, every finding by number, next) comes before any question |
 | `07-gate-block` | in block mode the stop gate keeps an agent from claiming done after an unreviewed edit; it ends with `judicata: not done` |
 | `08-verifier-refutes` | a verifier refutes a wrong blocker with the guard in the caller as counter-evidence, the file is done |
 | `09-broken-link` | a docs artifact with a broken link is not done (`references` criterion, no model) |

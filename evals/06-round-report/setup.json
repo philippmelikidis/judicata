@@ -1,0 +1,19 @@
+{
+  "contract": {
+    "name": "code",
+    "template": "code",
+    "paths": ["src/**"],
+    "reviewers": {"count": 1, "models": ["inherit"]},
+    "stop": {"max_rounds": 5, "stall_rounds": 2},
+    "criteria": [
+      {
+        "id": "CODE-1",
+        "text": "No TODO or FIXME markers left in the code",
+        "check": "pattern",
+        "required": true,
+        "forbid": "\\b(TODO|FIXME)\\b"
+      }
+    ]
+  },
+  "rounds": []
+}
