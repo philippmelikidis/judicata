@@ -67,7 +67,7 @@ def plan(project: Project, round_id: str, unattended: bool = False) -> dict:
             {"round": round_id},
         )
     rounds.require_complete(current_round)
-    assessed = rounds.assess(project, current_round, all_rounds)
+    assessed = rounds.assess(project, current_round, all_rounds, events)
     stored = current_round.verifier_plan
     if stored is None:
         found = rounds.simulate(

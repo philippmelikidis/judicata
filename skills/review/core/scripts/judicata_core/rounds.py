@@ -408,7 +408,9 @@ def check(project: Project, round_id: str, state_dir: str | None = None) -> dict
     }
 
 
-def assess(project: Project, current_round: Round, all_rounds: dict) -> dict:
+def assess(
+    project: Project, current_round: Round, all_rounds: dict, events: list[dict]
+) -> dict:
     """Everything a round has found so far, without writing anything.
 
     complete: every planned run is in (or there is no plan). new_results: the
@@ -455,7 +457,11 @@ def assess(project: Project, current_round: Round, all_rounds: dict) -> dict:
         )
     if current_round.plan is not None and complete:
         # at the place of a failed deterministic criterion: merged into it (#32)
-        candidates += findings.merge(candidates, findings.assess(current_round))
+        candidates += findings.merge(
+            candidates,
+            findings.assess(current_round),
+            _register(events, all_rounds, current_round),
+        )
     return {
         "complete": complete,
         "judged": judged,
@@ -464,6 +470,16 @@ def assess(project: Project, current_round: Round, all_rounds: dict) -> dict:
         "needs_verdict": needs_verdict,
         "no_verdict": no_verdict,
         "candidates": candidates,
+    }
+
+
+def _register(events: list[dict], all_rounds: dict, current_round: Round) -> set:
+    """Fingerprints of the contract rejected or accepted when the round started."""
+    before = states.replay(events[: current_round.started_seq], all_rounds)
+    return {
+        item.fingerprint
+        for item in states.of_contract(before, current_round.contract)
+        if item.state in states.REGISTER
     }
 
 
@@ -717,7 +733,7 @@ def evaluate(
     settle count in every mode. waiting_for_decision: both, as reports show
     them."""
     round_id = current_round.id
-    assessed = assess(project, current_round, all_rounds)
+    assessed = assess(project, current_round, all_rounds, events)
     before = simulate(events, all_rounds, current_round, assessed, closing=False)
     eligible = (
         []

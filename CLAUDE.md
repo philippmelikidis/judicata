@@ -240,12 +240,15 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `round check` (forbid per section, require/limits/unreadable per file, truncated list plus scope), command and no
   place = `{kind: "scope"}` with the content hash of the revision.
   `address.Locator` parses a file once for many lines.
-  No double findings (#32): `findings.merge()` (in `rounds.assess`) drops a reviewer finding at the same file and
-  line (any sighting's line in the criterion finding's `lines`) as a criterion finding of a failed `command`,
-  `pattern` or `references` criterion of the round and appends it to that finding's `merged` [{fingerprint,
-  category, severity, consensus, summary, line, sightings}] (recorded with it, in `round report` as `merged`,
-  scanned by `untrusted.finding`, cleaned by `untrusted.shown`); a reviewer finding more severe than the criterion
-  finding stays on its own. Command criteria only have the scope place, so nothing merges into them.
+  No double findings (#32): `findings.merge()` (in `rounds.assess`, which therefore takes `events`) drops a reviewer
+  finding at the place of a criterion finding of a failed `command`, `pattern` or `references` criterion of the
+  round (same file and every sighting's line in its `lines`, or the same Markdown paragraph address) and appends it
+  to that finding's `merged` [{fingerprint, category, severity, consensus, summary, line, sightings}] (recorded
+  with it, in `round report` as `merged`, scanned by `untrusted.finding`, cleaned by `untrusted.shown`). It stays
+  on its own when it is more severe than the criterion finding, or when either fingerprint was in the register
+  when the round started (`rounds._register`). `round_closed` closes an earlier live reviewer finding the round
+  merged (why `merged`, also an undecided confirmed blocker). Command criteria only have the scope place, so
+  nothing merges into them.
 - `states.py`: state per (contract, fingerprint) from replay only: `open`, `resolved` (fix), `closed`, `rejected`,
   `accepted` (the latter two = register). `finding_decided` sets the state (also before recording, decisions happen
   before `round close`); `finding_recorded` reopens `resolved` from another round and `closed`, and lets a decision
@@ -378,7 +381,8 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `options(field)` (names and paths are never "too long" and never "encoded", `text`/`evidence`/`quote` may span
   several lines, quotes are code: without shell, fences, blobs), a `command` does not count as a shell command.
   Long text: over `LONG_TEXT` (400) characters, the reasons of reviewers and verifiers (`REASONING`:
-  `verdicts.reason`, `verification.reason`) over `REASON_TEXT` (1,500, #32); cleaning limits unchanged.
+  `verdicts.reason`, `verification.reason`) over `REASON_TEXT` (1,500, #32; the output schemas take reasons
+  and finding evidence up to 1,500 characters); cleaning limits unchanged.
   Scan and `clean` read only the first `SCAN_LIMIT` characters, longer text is always `long_text` (what is shown
   was also checked). Outputs with `warnings`: `Finding.public()` (`finding list`, `earlier`, `round close`, later
   status), `rounds.with_state`, `round close` per criterion (also verdicts via `untrusted.judged`),

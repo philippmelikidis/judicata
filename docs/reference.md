@@ -154,9 +154,10 @@ the fix did not hold); and what happens next (what you decide, what is to be fix
 next round runs, where the stop rule stands). Each question then names its findings by number,
 at most four per question; "fix all" is only ever an extra option. In hosts without a question
 tool the questions follow the report as a numbered list. A reviewer finding at the same file
-and line as a failed command, pattern or references criterion is not listed or asked about
-twice: it is merged into the criterion's finding and shown there as context (one more severe
-than the criterion's finding stays on its own).
+and line (or Markdown paragraph) as a failed command, pattern or references criterion is not
+listed or asked about twice: it is merged into the criterion's finding and shown there as
+context (one more severe than the criterion's finding, or one where you already decided either
+of them, stays on its own).
 
 After each review you decide the findings: fix, reject or accept the risk (the last two with a
 one-line reason and a condition under which the finding counts again). These decisions hold in

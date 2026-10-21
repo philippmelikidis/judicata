@@ -11,6 +11,8 @@ import json
 
 from conftest import command_contract, judgment_contract, reviewer_output
 
+RATIO = json.loads(reviewer_output("findings"))["findings"][0]  # correctness blocker
+
 PARAGRAPHS = ("one", "two", "three", "four")
 
 
@@ -316,18 +318,20 @@ REASON = (
     "average([]) raises ZeroDivisionError instead of handling the empty list. "
     + "The caller in src/app.py passes the list it read from the file unchanged. " * 5
 ).strip()
+LONGER = " ".join([REASON] * 3)  # about 1,300 characters
 
 
 def long_reasons(warnings: list[dict]) -> list[dict]:
     return [w for w in warnings if "long_text" in w["reasons"]]
 
 
-def test_a_reviewer_reason_of_almost_500_characters_is_not_flagged(project):
-    assert 400 < len(REASON) <= 500
+def test_a_reviewer_reason_of_about_1300_characters_is_not_flagged(project):
+    assert 1_200 < len(LONGER) <= 1_500
     project.add_artifact()
     project.write_contract("code", judgment_contract())
     output = json.loads(reviewer_output("fail"))
-    output["criteria"][0]["reason"] = REASON
+    output["criteria"][0]["reason"] = LONGER
+    output["findings"] = [{**RATIO, "evidence": LONGER}]
     round_id, runs = project.judged_round()
     for run in runs:
         code, payload = project.submit(round_id, run, json.dumps(output))
@@ -356,8 +360,8 @@ def verified_round(project, reason: str) -> str:
     return round_id
 
 
-def test_a_verifier_reason_of_almost_500_characters_is_not_flagged(project):
-    round_id = verified_round(project, REASON)
+def test_a_verifier_reason_of_about_1300_characters_is_not_flagged(project):
+    round_id = verified_round(project, LONGER)
 
     shown = project.ok("round", "report", "--round", round_id)
 
@@ -366,8 +370,8 @@ def test_a_verifier_reason_of_almost_500_characters_is_not_flagged(project):
 
 
 def foreign_verdict(project, reason: str) -> None:
-    """The verifier verdict in the ledger with a reason the schema would not
-    take (written by hand or by another tool)."""
+    """The verifier verdict in the ledger with another reason (one over the
+    schema's limit written by hand or by another tool)."""
     lines = []
     for event in project.ledger_events():
         if event["type"] == "verifier_verdict":
@@ -402,3 +406,123 @@ def test_other_fields_keep_their_limit(project):
     [decided] = project.ok("finding", "list", "--contract", "docs")["findings"]
 
     assert [w["field"] for w in long_reasons(decided["warnings"])] == ["reason"]
+
+
+# review findings (#32)
+
+
+def test_an_earlier_reviewer_blocker_at_the_place_goes_on_in_the_criterion(project):
+    (project.root / "docs").mkdir()
+    (project.root / "docs" / "configuration.md").write_text("# Config\n", "utf-8")
+    blocker = {**LINK, "severity": "blocker"}
+    first = docs_round(project, blocker)
+    assert project.ok("round", "close", "--round", first)["open_blockers"] == 1
+
+    (project.root / "docs" / "configuration.md").unlink()
+    round_id, [run] = project.judged_round()
+    output = json.dumps({"criteria": [], "findings": [blocker]})
+    code, payload = project.submit(round_id, run, output)
+    assert code == 0, payload
+    shown = project.ok("round", "report", "--round", round_id)
+    closed = project.ok("round", "close", "--round", round_id, "--unattended")
+
+    [finding] = shown["findings"]
+    assert finding["source"] == "criterion" and len(finding["merged"]) == 1
+    assert shown["result"]["open_blockers"] == closed["open_blockers"] == 1
+    [brief] = project.ok("status")["contracts"]
+    assert [b["source"] for b in brief["blockers"]] == ["criterion"]
+
+
+def test_a_decided_place_does_not_hide_a_new_reviewer_blocker(project):
+    first = docs_round(project)
+    [entry] = project.ok("finding", "list", "--round", first)["findings"]
+    project.ok(
+        "finding", "decide", "--round", first, "--fingerprint", entry["fingerprint"],
+        "--decision", "accept", "--reason", "The page comes later.",
+        "--reopen-if", "the docs ship",
+    )  # fmt: skip
+    project.ok("round", "close", "--round", first)
+
+    round_id, [run] = project.judged_round()
+    blocker = {**LINK, "severity": "blocker"}
+    output = json.dumps({"criteria": [], "findings": [blocker]})
+    code, payload = project.submit(round_id, run, output)
+    assert code == 0, payload
+    shown = project.ok("round", "report", "--round", round_id)
+
+    [finding] = shown["findings"]
+    assert finding["source"] == "reviewer" and finding["severity"] == "blocker"
+    assert shown["result"]["open_blockers"] >= 1
+
+
+def test_a_reviewer_finding_in_the_same_paragraph_is_merged(project):
+    elsewhere = {
+        **LINK,
+        "line": 7,
+        "quote": "- [Requirements](install.md#requirements)",
+    }
+    round_id = docs_round(project, elsewhere)
+
+    shown = project.ok("round", "report", "--round", round_id)
+
+    [finding] = shown["findings"]
+    assert finding["source"] == "criterion"
+    assert finding["merged"][0]["summary"] == LINK["summary"]
+
+
+SOURCE = (
+    "def total(items):\n"
+    "    # TODO: negative quantities\n"
+    "    result = 0\n"
+    "    for item in items:\n"
+    "        result += item\n"
+    "    return result / len(items)\n"
+)
+
+
+def test_one_sighting_at_the_hit_does_not_take_the_others_along(project):
+    contract = todo_contract().replace('["notes.md"]', '["src/**"]')
+    contract = contract.replace('template = "docs"', 'template = "code"')
+    contract = contract.replace(
+        'paths = ["src/**"]', 'paths = ["src/**"]\n\n[reviewers]\ncount = 2'
+    )
+    contract += (
+        '\n[[criteria]]\nid = "JUD-1"\ntext = "No known bugs"\n'
+        'check = "judgment"\nrequired = false\n'
+    )
+    project.write_contract("docs", contract)
+    (project.root / "src").mkdir()
+    (project.root / "src" / "cart.py").write_text(SOURCE, encoding="utf-8")
+    at_hit = {
+        "category": "correctness",
+        "severity": "should-fix",
+        "file": "src/cart.py",
+        "line": 2,
+        "symbol": "total",
+        "summary": "Negative quantities are not handled yet.",
+        "evidence": "total([-1]) returns -1.",
+        "quote": "# TODO: negative quantities",
+    }
+    crash = {
+        **at_hit,
+        "line": 6,
+        "summary": "total([]) divides by zero.",
+        "evidence": "total([]) raises ZeroDivisionError.",
+        "quote": "return result / len(items)",
+    }
+    round_id, runs = project.judged_round()
+    verdict = {
+        "id": "JUD-1",
+        "passed": True,
+        "reason": "Checked.",
+        "evidence": [{"file": "src/cart.py", "line": 3, "quote": "result = 0"}],
+    }
+    for run, found in zip(runs, (at_hit, crash), strict=True):
+        output = json.dumps({"criteria": [verdict], "findings": [found]})
+        code, payload = project.submit(round_id, run, output)
+        assert code == 0, payload
+
+    shown = project.ok("round", "report", "--round", round_id)
+
+    sources = sorted(f["source"] for f in shown["findings"])
+    assert sources == ["criterion", "reviewer"]

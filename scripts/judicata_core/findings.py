@@ -276,30 +276,38 @@ DETERMINISTIC = ("command", "pattern", "references")  # checks without a model
 MERGED = ("fingerprint", "category", "severity", "consensus", "summary", "line")
 
 
-def merge(criterion_entries: list[dict], reviewer_entries: list[dict]) -> list[dict]:
+def merge(
+    criterion_entries: list[dict], reviewer_entries: list[dict], register: set
+) -> list[dict]:
     """The reviewer findings that are not at the place of a failed
-    deterministic criterion (#32). One at the same file and line as a
-    criterion finding of a command, pattern or references check goes into
-    that finding's merged list (the reviewers' evidence as context) instead
-    of being a finding of its own; the first such criterion finding takes
-    it. A reviewer finding more severe than the criterion finding stays on
-    its own, so merging never lowers a blocker."""
+    deterministic criterion (#32). One at the place of a criterion finding of
+    a command, pattern or references check goes into that finding's merged
+    list (the reviewers' evidence as context) instead of being a finding of
+    its own; the first such criterion finding takes it. At the place: every
+    sighting at one of the criterion finding's lines, or the same Markdown
+    paragraph (a link may run over two lines). It stays on its own when it
+    is more severe than the criterion finding (merging never lowers a
+    blocker) or when either of them is in the register (register:
+    fingerprints rejected or accepted when the round started; a decided
+    place must not hide a new finding, a decided finding keeps its
+    suppression)."""
     kept = []
     for entry in reviewer_entries:
         lines = {s.get("line") for s in entry.get("sightings") or []}
         lines = (lines | {entry.get("line")}) - {None}
-        target = next(
-            (
-                item
-                for item in criterion_entries
-                if item.get("check") in DETERMINISTIC
-                and item.get("file") is not None
-                and item["file"] == entry.get("file")
-                and lines & set(item.get("lines") or [item.get("line")])
-                and _RANK[entry["severity"]] >= _RANK[item["severity"]]
-            ),
-            None,
-        )
+        target = None
+        if entry["fingerprint"] not in register:
+            target = next(
+                (
+                    item
+                    for item in criterion_entries
+                    if item.get("check") in DETERMINISTIC
+                    and item["fingerprint"] not in register
+                    and _at(item, entry, lines)
+                    and _RANK[entry["severity"]] >= _RANK[item["severity"]]
+                ),
+                None,
+            )
         if target is None:
             kept.append(entry)
             continue
@@ -308,3 +316,12 @@ def merge(criterion_entries: list[dict], reviewer_entries: list[dict]) -> list[d
             | {"sightings": entry.get("sightings") or []}
         )
     return kept
+
+
+def _at(item: dict, entry: dict, lines: set) -> bool:
+    if item.get("file") is None or item["file"] != entry.get("file"):
+        return False
+    if lines and lines <= set(item.get("lines") or [item.get("line")]):
+        return True
+    where = item.get("address") or {}
+    return where.get("kind") == "markdown" and where == entry.get("address")

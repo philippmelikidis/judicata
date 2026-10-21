@@ -22,6 +22,8 @@ Transitions, in ledger order:
   round_closed      open or resolved, not seen in this round, contract of this
                     round, looked for -> closed. A confirmed blocker that was
                     never decided stays open: it waits for the user's word.
+                    A reviewer finding the round merged into a criterion
+                    finding (findings.merge, #32) -> closed (merged).
   contract_version  a criterion finding whose criterion the new version changed
                     (other hash) or removed -> closed, its decision lapses
                     (criterion_changed, criterion_removed). The changed
@@ -181,6 +183,7 @@ def replay(events: list[dict], all_rounds: dict) -> dict[tuple[str, str], Findin
     started: dict[str, int] = {}  # round id -> ledger position of round_started
     known: dict[str, dict[str, str]] = {}  # contract -> criteria of its latest version
     verdicts: dict[tuple, dict] = {}  # (round, contract, fingerprint) -> verdict
+    merged: dict[str, set] = {}  # round id -> reviewer fingerprints merged (#32)
     for seq, event in enumerate(events):
         data = event["data"]
         if event["type"] == ROUND_STARTED:
@@ -202,8 +205,18 @@ def replay(events: list[dict], all_rounds: dict) -> dict[tuple[str, str], Findin
             _recorded(item, data, started.get(data["round"], seq), event.get("id"))
             _verify(item, data, verdicts)
             _stale(found, known, data, seq)
+            merged.setdefault(data["round"], set()).update(
+                m.get("fingerprint")
+                for m in data.get("merged") or []
+                if isinstance(m, dict)
+            )
         elif event["type"] == ROUND_CLOSED and data["round"] in all_rounds:
-            _closed(found, all_rounds[data["round"]], started.get(data["round"], seq))
+            _closed(
+                found,
+                all_rounds[data["round"]],
+                started.get(data["round"], seq),
+                merged.get(data["round"], set()),
+            )
         elif event["type"] == CONTRACT_VERSION:
             known[data["contract"]] = {
                 c["id"]: c["hash"] for c in data.get("criteria", [])
@@ -382,11 +395,16 @@ def decided_in(item: Finding, round_id: str) -> bool:
     return item.decision is not None and item.decision["round"] == round_id
 
 
-def _closed(found: dict, current_round, started: int) -> None:
+def _closed(found: dict, current_round, started: int, merged: set) -> None:
     for item in found.values():
         if item.contract != current_round.contract or item.state not in LIVE:
             continue
         if current_round.id in item.rounds or started < item.since:
+            continue
+        if item.fingerprint in merged and item.info.get("source") == "reviewer":
+            # the round found it at a failed criterion's place: it goes on in
+            # that criterion's finding (#32), never twice
+            item.move("closed", current_round.id, "merged", started)
             continue
         if (
             item.info.get("source") == "reviewer"
