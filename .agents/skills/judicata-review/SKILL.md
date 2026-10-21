@@ -740,8 +740,8 @@ this order. The user must be able to decide from it alone.
    `result.outcome_label`" (`result.final` false: say "as it stands before your
    decisions"), the counts by severity from `result.severity` ("3 blockers, 1 should-fix,
    2 notes") and the open blockers per round of `result.open_blockers_per_round` joined with
-   " -> " (for example "6 -> 4 -> 3"; a failed criterion counts once however many places
-   it fails at, plus every blocking finding outside the contract). A focused round (`result.counted` false) says
+   " -> " (for example "6 -> 4 -> 3"; every blocking place counts: a criterion failing at four
+   places is four, plus every blocking finding outside the contract). A focused round (`result.counted` false) says
    "focused round, it does not count for the stop rule" instead of the round numbers.
 2. **Criteria**, one line each: id, text, passed or failed (or pending, or undecided: the
    reviewers did not agree, the user decides); a failed one with its `effect` (blocks,
@@ -756,7 +756,10 @@ this order. The user must be able to decide from it alone.
    `not_run`), whether it is new or came back (`history`: `new`; `still_open`, open since an
    earlier round; `came_back` because `place_changed`, `fix_not_confirmed` (the fix did not
    hold), `closed_before` or `criterion_changed`; `earlier`, an open blocker from an earlier
-   round that this round did not see) and a decision if there is one. If
+   round that this round did not see) and a decision if there is one. A criterion finding
+   with entries in `merged` adds one line per entry: "also reported by a reviewer" with its
+   `category`, `summary` and `evidence` (the same place, so it is not a finding of its own
+   and not asked about separately). If
    `result.suppressed` is not 0, one line: that many earlier decisions held at unchanged
    places.
 4. **What happens next**: what the user decides now (the numbers in `next.decide`, the

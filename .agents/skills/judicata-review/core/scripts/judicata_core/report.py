@@ -16,6 +16,10 @@ round report --round R answers, in this order:
   findings  every finding on its own, numbered from 1, blockers first: source,
             criterion, category, severity, place {file, line, lines, label},
             summary (what is wrong), evidence (scenario, quote, hit or output),
+            merged (reviewer findings at the place of a failed command,
+            pattern or references criterion, merged into its finding instead
+            of listed twice, #32: category, severity, consensus, summary,
+            evidence, reviewers = how many runs saw it; [] otherwise),
             reviewers {saw, of: planned runs, answered: valid answers} (None for
             deterministic checks and earlier findings), consensus,
             confirmed, verification (verified, refuted, inconclusive, unverified:
@@ -275,7 +279,9 @@ def _rule(events, all_rounds, current) -> dict:
         ids = [r.id for r in members]
         if current.id not in ids:
             continue
-        counts = [stop.blockers(r) for r in members[: ids.index(current.id) + 1]]
+        upto = members[: ids.index(current.id) + 1]
+        counts = [stop.blockers(r) for r in upto]
+        start = stop.comparable([stop.counting(r) for r in upto])
         return {
             "counted": True,
             "pass": number,
@@ -283,7 +289,7 @@ def _rule(events, all_rounds, current) -> dict:
             **stop.limits(current),
             "stalled_rounds": 0
             if current.outcome in COUNTING
-            else stop.stalled(counts),
+            else stop.stalled(counts[start:]),
             "open_blockers_per_round": counts,
             "ended": current.outcome in stop.ENDS,
         }
@@ -338,6 +344,7 @@ def _finding(current, seen: dict, prior: dict, entry: dict, number: int) -> dict
         },
         "summary": summary,
         "evidence": evidence,
+        "merged": _merged_findings(entry),
         "reviewers": None
         if saw is None or earlier
         else {"saw": saw, "of": planned, "answered": answered},
@@ -363,6 +370,27 @@ def _finding(current, seen: dict, prior: dict, entry: dict, number: int) -> dict
             else [],
         ),
     }
+
+
+def _merged_findings(entry: dict) -> list[dict]:
+    """Reviewer findings at this criterion finding's place, merged into it
+    (#32): what they said, as context."""
+    found = []
+    for item in entry.get("merged") or []:
+        if not isinstance(item, dict):
+            continue
+        summary, evidence, saw = _what(None, {}, {**item, "source": "reviewer"})
+        found.append(
+            {
+                "category": untrusted.clean(item.get("category"), 60),
+                "severity": item.get("severity"),
+                "consensus": item.get("consensus"),
+                "summary": summary,
+                "evidence": evidence,
+                "reviewers": saw,
+            }
+        )
+    return found
 
 
 def _merged(*lists: list[dict]) -> list[dict]:

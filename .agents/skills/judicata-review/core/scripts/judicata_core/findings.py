@@ -30,6 +30,13 @@ through the same states (states.py). Category = criterion id, consensus
 A failed criterion without any place gets the scope place. The fingerprint
 uses "criterion:<id>" as category ("criterion:" never starts a taxonomy word or
 an id), so a criterion finding never collides with a reviewer finding.
+
+No double finding (#32): a reviewer finding at the same file and line as a
+criterion finding of a deterministic check (command, pattern, references) is
+merged into it (merge(): its evidence kept in the criterion finding's merged
+list), not recorded, counted or put to the user on its own; one more severe
+than the criterion finding stays on its own. Command criteria have only the
+scope place, so nothing ever lands on them.
 """
 
 from . import address
@@ -263,3 +270,41 @@ def criterion_findings(contract_name: str, criterion: dict, data: dict, whole: d
         elif place["line"] and place["line"] not in entry["lines"]:
             entry["lines"].append(place["line"])
     return list(grouped.values())
+
+
+DETERMINISTIC = ("command", "pattern", "references")  # checks without a model
+MERGED = ("fingerprint", "category", "severity", "consensus", "summary", "line")
+
+
+def merge(criterion_entries: list[dict], reviewer_entries: list[dict]) -> list[dict]:
+    """The reviewer findings that are not at the place of a failed
+    deterministic criterion (#32). One at the same file and line as a
+    criterion finding of a command, pattern or references check goes into
+    that finding's merged list (the reviewers' evidence as context) instead
+    of being a finding of its own; the first such criterion finding takes
+    it. A reviewer finding more severe than the criterion finding stays on
+    its own, so merging never lowers a blocker."""
+    kept = []
+    for entry in reviewer_entries:
+        lines = {s.get("line") for s in entry.get("sightings") or []}
+        lines = (lines | {entry.get("line")}) - {None}
+        target = next(
+            (
+                item
+                for item in criterion_entries
+                if item.get("check") in DETERMINISTIC
+                and item.get("file") is not None
+                and item["file"] == entry.get("file")
+                and lines & set(item.get("lines") or [item.get("line")])
+                and _RANK[entry["severity"]] >= _RANK[item["severity"]]
+            ),
+            None,
+        )
+        if target is None:
+            kept.append(entry)
+            continue
+        target.setdefault("merged", []).append(
+            {key: entry.get(key) for key in MERGED}
+            | {"sightings": entry.get("sightings") or []}
+        )
+    return kept

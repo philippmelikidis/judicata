@@ -252,7 +252,7 @@ def _task(current_round, results: dict, entry: dict, commands: list) -> tuple:
                 continue
             warnings += untrusted.collect(
                 f"run {verdict.get('run')}",
-                {"reason": verdict.get("reason")},
+                {"verdicts.reason": verdict.get("reason")},
             )
             evidence.append(f"- {clean(verdict.get('reason'), 500)}")
             evidence += [

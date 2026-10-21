@@ -183,9 +183,9 @@ def large_contract() -> str:
 def large_source() -> str:
     parts = []
     for number in range(MANY):
-        parts.append(
-            f"def function_with_a_rather_long_descriptive_name_{number:03}():\n"
-            f"    return {number}  # {' '.join(RULES)}\n\n\n"
+        parts.append(  # markers on the def line, the reviewer cites the return
+            f"def function_with_a_rather_long_descriptive_name_{number:03}():"
+            f"  # {' '.join(RULES)}\n    return {number}\n\n\n"
         )
     return "".join(parts)
 

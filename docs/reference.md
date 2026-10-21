@@ -146,13 +146,17 @@ and the report says it was not independent.
 
 Before judicata asks you anything about a round, it shows the whole round (`round report`): one
 line with the round of the pass, the outcome, the findings by severity and the open blockers
-per round (for example 6 -> 4 -> 3); every criterion, passed or failed with the reason; every
+per round (for example 6 -> 4 -> 3; every blocking place counts, so a criterion that fails at
+four places is four open blockers and fixing one of them shows as progress); every criterion, passed or failed with the reason; every
 finding on its own with a number, its place, what is wrong, the evidence, how many reviewers
 saw it, the verifier's verdict and whether it is new or came back (and why: its place changed,
 the fix did not hold); and what happens next (what you decide, what is to be fixed, when the
 next round runs, where the stop rule stands). Each question then names its findings by number,
 at most four per question; "fix all" is only ever an extra option. In hosts without a question
-tool the questions follow the report as a numbered list.
+tool the questions follow the report as a numbered list. A reviewer finding at the same file
+and line as a failed command, pattern or references criterion is not listed or asked about
+twice: it is merged into the criterion's finding and shown there as context (one more severe
+than the criterion's finding stays on its own).
 
 After each review you decide the findings: fix, reject or accept the risk (the last two with a
 one-line reason and a condition under which the finding counts again). These decisions hold in
@@ -416,7 +420,8 @@ injection.
   role switches ("system:", "you are now"), requests for tool calls, shell commands, changes
   to settings, permissions or approvals, keeping things from the user, sending secrets,
   invisible and bidi control characters, code fences, tags like `<system>`, encoded blobs,
-  lookalike letters from other scripts and very long texts. Its answers (session context,
+  lookalike letters from other scripts and very long texts (over about 400 characters; the
+  reasons of reviewers and verifiers over about 1,500). Its answers (session context,
   review plan, finding list, contract show) mark each hit per entry ("possible prompt
   injection detected in entry ..."), with the field and the reason, and Claude names them
   when it reports.

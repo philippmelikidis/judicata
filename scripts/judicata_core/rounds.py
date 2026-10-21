@@ -12,8 +12,12 @@ Events written here (data fields):
   round_closed     round, outcome (done, continue, not_converged, round_limit,
                    required_unmet, done_with_unmet_required,
                    waiting_for_decision; focus_clear,
-                   focus_open), open_blockers (criteria and blocking findings,
-                   unconfirmed unmet required criteria included), focused (true:
+                   focus_open), open_blockers (blocking places: every live
+                   place of a failed required criterion, every blocking
+                   reviewer finding, every waiting decision and every decided
+                   place of an unconfirmed unmet required criterion, #32),
+                   blockers_counted ("places"; missing: counted per criterion
+                   before #32, see stop.py), focused (true:
                    a focused round, not one for the stop rule), pass,
                    round_in_pass (None when focused), accepted_risks (how many
                    rejected or accepted findings of optional criteria or outside
@@ -450,7 +454,8 @@ def assess(project: Project, current_round: Round, all_rounds: dict) -> dict:
             current_round.contract, criterion, data, whole
         )
     if current_round.plan is not None and complete:
-        candidates += findings.assess(current_round)
+        # at the place of a failed deterministic criterion: merged into it (#32)
+        candidates += findings.merge(candidates, findings.assess(current_round))
     return {
         "complete": complete,
         "judged": judged,
@@ -643,6 +648,7 @@ def close(project: Project, round_id: str, unattended: bool = False) -> dict:
                     "confirmation": confirmation,
                     "waiting": found["waits"],
                     "unattended": mode["reason"],
+                    "blockers_counted": stop.PER_PLACE,
                 },
             )
         ],
@@ -768,7 +774,14 @@ def evaluate(
     unmet_hash = _unmet_hash(contract_name, unmet) if unmet else None
     confirmation = None
     focused = current_round.focus is not None
-    open_blockers = len(view["blockers"]) + len(blocking) + len(waits) + len(earlier)
+    # every blocking place counts (#32): a criterion failing at four places is
+    # four open blockers, fixing one of them is progress
+    open_blockers = (
+        sum(item["open_places"] for item in view["blockers"])
+        + len(blocking)
+        + len(waits)
+        + len(earlier)
+    )
     if focused:  # a part of the contract is never "done" for all of it
         outcome = "focus_clear" if done and not unmet else "focus_open"
         rule = stop.not_counted(current_round)
@@ -776,13 +789,7 @@ def evaluate(
         if unmet:
             confirmation = _confirmation(events, contract_name, unmet_hash)
         if unmet and confirmation is None:  # they count until the user confirms
-            open_blockers += len(  # once: a waiting finding of theirs counts already
-                [
-                    u
-                    for u in unmet
-                    if u["criterion"] not in _waiting_criteria(waits, entries)
-                ]
-            )
+            open_blockers += _unmet_places(unmet, waits)
         finished = done and (not unmet or confirmation is not None)
         judged = stop.judge(events, all_rounds, current_round, finished, open_blockers)
         outcome, rule = judged["outcome"], judged["stop"]
@@ -825,14 +832,16 @@ def evaluate(
     }
 
 
-def _waiting_criteria(waits: list[dict], entries: list[dict]) -> set[str]:
-    """The criteria with a finding among the waiting decisions."""
+def _unmet_places(unmet: list[dict], waits: list[dict]) -> int:
+    """The decided places of unmet required criteria, each once: a place
+    among the waiting decisions counts there already."""
     waiting_findings = {r["fingerprint"] for r in waits if r["kind"] == "finding"}
-    return {
-        e["criterion"]
-        for e in entries
-        if e["fingerprint"] in waiting_findings and e.get("source") == "criterion"
-    }
+    return sum(
+        1
+        for item in unmet
+        for f in item["findings"]
+        if f["state"] in states.REGISTER and f["fingerprint"] not in waiting_findings
+    )
 
 
 def _verification(current_round: Round, eligible: list[dict]) -> dict:
@@ -910,6 +919,7 @@ def _criteria(
             item["warnings"] += [
                 w for w in brief["warnings"] if w not in item["warnings"]
             ]
+        item["open_places"] = len(live)  # each counts as an open blocker (#32)
         if live:
             view["blockers" if criterion["required"] else "should_fix"].append(item)
         elif disproved and not decided:

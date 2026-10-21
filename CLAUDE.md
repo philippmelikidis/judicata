@@ -113,7 +113,12 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `contract_version` events before `round_started` plus `contract_hash`), and evaluates in this order: `done`, then
   `not_converged` (in the last `stall_rounds` rounds of the pass the open blockers were never below the round before;
   the first round is only the baseline, so with the default of 2 at the earliest after round 3), then `round_limit`
-  (round `max_rounds`), otherwise `continue`. Unmet required criteria (#33): unconfirmed, they count in
+  (round `max_rounds`), otherwise `continue`. Open blockers count places (#32): every live, not refuted place of a
+  failed required criterion (`_criteria` sets `open_places`), every blocking reviewer finding, every waiting decision
+  and every decided place of an unconfirmed unmet required criterion (`_unmet_places`, a waiting place only once);
+  `round_closed.blockers_counted` = `"places"`. Rounds closed before counted a failed criterion once: `stalled`
+  only compares the rounds at the end of a pass that count the same way (`stop.comparable`, `stop.counting`), also
+  in `round report`. Unmet required criteria (#33): unconfirmed, they count in
   `open_blockers` and prevent `done`; if nothing else is open, `continue` becomes `required_unmet` (pass stays open,
   so after `stall_rounds` honestly `not_converged`); confirmed (carried over), `done` becomes
   `done_with_unmet_required`. Limits from `round_started.stop` (contract at the start, older rounds use the
@@ -235,6 +240,12 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `round check` (forbid per section, require/limits/unreadable per file, truncated list plus scope), command and no
   place = `{kind: "scope"}` with the content hash of the revision.
   `address.Locator` parses a file once for many lines.
+  No double findings (#32): `findings.merge()` (in `rounds.assess`) drops a reviewer finding at the same file and
+  line (any sighting's line in the criterion finding's `lines`) as a criterion finding of a failed `command`,
+  `pattern` or `references` criterion of the round and appends it to that finding's `merged` [{fingerprint,
+  category, severity, consensus, summary, line, sightings}] (recorded with it, in `round report` as `merged`,
+  scanned by `untrusted.finding`, cleaned by `untrusted.shown`); a reviewer finding more severe than the criterion
+  finding stays on its own. Command criteria only have the scope place, so nothing merges into them.
 - `states.py`: state per (contract, fingerprint) from replay only: `open`, `resolved` (fix), `closed`, `rejected`,
   `accepted` (the latter two = register). `finding_decided` sets the state (also before recording, decisions happen
   before `round close`); `finding_recorded` reopens `resolved` from another round and `closed`, and lets a decision
@@ -366,6 +377,8 @@ thin callers: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/judicata.py" <group> <comm
   `criterion X of contract C`, `contract file C`, `project path`. How a field is checked is defined by
   `options(field)` (names and paths are never "too long" and never "encoded", `text`/`evidence`/`quote` may span
   several lines, quotes are code: without shell, fences, blobs), a `command` does not count as a shell command.
+  Long text: over `LONG_TEXT` (400) characters, the reasons of reviewers and verifiers (`REASONING`:
+  `verdicts.reason`, `verification.reason`) over `REASON_TEXT` (1,500, #32); cleaning limits unchanged.
   Scan and `clean` read only the first `SCAN_LIMIT` characters, longer text is always `long_text` (what is shown
   was also checked). Outputs with `warnings`: `Finding.public()` (`finding list`, `earlier`, `round close`, later
   status), `rounds.with_state`, `round close` per criterion (also verdicts via `untrusted.judged`),
