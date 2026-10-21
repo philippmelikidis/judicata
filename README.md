@@ -307,7 +307,7 @@ agents, security and how to run the tests and evals.
 ```
 uvx ruff@0.17.1 check . && uvx ruff@0.17.1 format --check .
 uv run --with pytest==9.1.1 pytest
-claude plugin eval . --scaffold --allow-tools Bash --trust-plugin --runs 1 --no-publish
+claude plugin eval . --scaffold --allow-tools Bash Edit --trust-plugin --runs 1 --no-publish
 ```
 
 The tests drive the core command line. `skills/review/core/` (the core) and
@@ -317,7 +317,7 @@ differ from the source. Every change to shipped files (manifest, skills, agents,
 scripts, templates) needs an entry under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) or a
 higher version in `.claude-plugin/plugin.json`; `python3 tools/check_version.py` checks this in
 CI. To release: raise the version, move the Unreleased entries under it, tag `v<version>`.
-Five acceptance evals in `evals/` check the plugin's
+Nine acceptance evals in `evals/` check the plugin's
 behavior in Claude Code against a baseline without the plugin. See
 [Development](docs/reference.md#development).
 

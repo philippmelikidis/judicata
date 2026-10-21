@@ -19,8 +19,11 @@ case starts with a real ledger, written by the core and not by hand:
       ]
     }
 
-A round without "decide" leaves its findings open. The ledger is committed at
-the end, as a user would after a review.
+A round without "decide" leaves its findings open. "for": [paths] starts the
+round for those paths only (round start --for), "close": false leaves it open
+after the reviewer answers and decisions, as a session that ended in the
+middle of a review would. The ledger is committed at the end, as a user would
+after a review.
 """
 
 import json
@@ -66,7 +69,8 @@ def git(project: Path, *args: str) -> None:
 
 
 def play_round(project: Path, spec: dict) -> None:
-    round_id = core(project, "round", "start")["round"]
+    start = [arg for path in spec.get("for", []) for arg in ("--for", path)]
+    round_id = core(project, "round", "start", *start)["round"]
     core(project, "round", "check", "--round", round_id)
     plan = core(project, "review", "plan", "--round", round_id)
     for run in plan["runs"]:
@@ -98,7 +102,8 @@ def play_round(project: Path, spec: dict) -> None:
         if "reason" in wanted:
             args += ["--reason", wanted["reason"], "--reopen-if", wanted["reopen_if"]]
         core(project, *args)
-    core(project, "round", "close", "--round", round_id)
+    if spec.get("close", True):
+        core(project, "round", "close", "--round", round_id)
 
 
 def main() -> None:

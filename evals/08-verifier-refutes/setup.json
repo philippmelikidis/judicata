@@ -1,0 +1,39 @@
+{
+  "contract": {
+    "name": "code",
+    "template": "code",
+    "paths": ["src/**"],
+    "reviewers": {"count": 1, "models": ["inherit"]},
+    "stop": {"max_rounds": 5, "stall_rounds": 2},
+    "criteria": [
+      {
+        "id": "CODE-1",
+        "text": "No TODO or FIXME markers left in the code",
+        "check": "pattern",
+        "required": true,
+        "forbid": "\\b(TODO|FIXME)\\b"
+      }
+    ]
+  },
+  "rounds": [
+    {
+      "for": ["src/weather/stats.py"],
+      "reviewer": {
+        "criteria": [],
+        "findings": [
+          {
+            "category": "correctness",
+            "severity": "blocker",
+            "file": "src/weather/stats.py",
+            "line": 6,
+            "symbol": "latest",
+            "quote": "return readings[-count:]",
+            "summary": "latest() returns every reading for a count of 0, so the report shows the whole history when the user asks for none.",
+            "evidence": "readings[-0:] is readings[0:]: latest(readings, 0) returns all readings, and recent(readings, 0) in the report passes that list on."
+          }
+        ]
+      },
+      "close": false
+    }
+  ]
+}

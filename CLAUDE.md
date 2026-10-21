@@ -559,8 +559,8 @@ the interview does. Reviewer outputs are fixtures in `tests/fixtures/reviewer/`,
 
 **Evals** (`evals/`, #18): seam 2 of the spec, `claude plugin eval` with ablation against Claude without the
 plugin, local, not in CI (costs tokens). Run from the repo root:
-`claude plugin eval . --scaffold --allow-tools Bash --trust-plugin --runs 1 --no-publish`
-(a single case with `--case '<glob>'`, without a baseline `--ablation none`, `--keep-temp` keeps the throwaway
+`claude plugin eval . --scaffold --allow-tools Bash Edit --trust-plugin --runs 1 --no-publish`
+(a single case with `--case '<glob>'` on the `name` in `case.yaml`, without a baseline `--ablation none`, `--keep-temp` keeps the throwaway
 projects). In the eval, Bash runs in a sandbox: on Linux `bwrap` and `socat` must be in PATH (without sudo:
 download the `.deb` packages with `apt-get download` and unpack them into a temporary directory).
 One folder per case with `case.yaml` (prompt, graders), `scaffold.sh` (calls `_lib/scaffold.py`), `project/`
@@ -570,11 +570,17 @@ everything through the core, never by hand. Graders as deterministic as possible
 `.judicata/ledger.jsonl` (compact events, one line per event; patterns with `[^\n]*` within one line), plus per
 case one LLM grader on the last answer and `tool_used: Skill` (with ablation it only counts as an indicator).
 The eval has no AskUserQuestion: the prompts therefore say "no follow-up questions, leave decisions open", and the
-contracts have no command criteria (no approval needed) and one reviewer.
+contracts have no command criteria (no approval needed) and one reviewer. `execution.env` takes only `EVAL_*`
+keys, so block mode comes from the contract (`07-gate-block`, `gate = "block"`). v0.2 cases: `06-round-report` (the report before any question),
+`07-gate-block`
+(an edit adds a TODO after a done round, the gate blocks the false done (regex on `trace` for its block message), the answer ends with
+`judicata: not done` (regex on `last_message`, the gate's `HONEST` rule); `Edit` is needed only here), `08-verifier-refutes` (the
+user names one file, so the reviewer sees `latest(readings, 0)` without its caller's guard; the verifier
+reads the whole contract scope and refutes with a quote from the caller), `09-broken-link` (`references`).
 
 **Measurement** (`measure/`, #9): `measure/measure.py` compares judicata with plain Claude Code for the README
 numbers, maintainers only, not shipped, not in CI. Corpus: the eval cases (judicata arm via `evals/_lib/scaffold.py`,
-plain arm only the artifact; truth in `measure/evals.json`) and seeded cases `measure/seeded/<case>/` (`project/`
+plain arm only the artifact; truth in `measure/evals.json`, `"measure": false` leaves a case out) and seeded cases `measure/seeded/<case>/` (`project/`
 plus `case.json` with bug and decoy mutations, applied in a throwaway folder). Both arms run `claude -p`
 (`--setting-sources project,local --strict-mcp-config`, `dontAsk`, Bash in Claude Code's sandbox, every shell
 command only with `--allow-bash`, Edit/Write denied), the

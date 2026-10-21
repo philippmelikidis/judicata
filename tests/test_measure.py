@@ -355,3 +355,47 @@ def test_counts_each_finding_once_and_leaves_out_broken_replies(tmp_path):
     assert rows["Said done with seeded bugs left"] == "1 of 1"
     assert rows["Trials left out (failed or no block)"] == "2 of 4"
     assert rows["Done as expected (eval cases)"] == "n/a"
+
+
+def test_leaves_out_eval_cases_whose_truth_says_so(tmp_path):
+    evals = tmp_path / "evals"
+    for name in ("01-review", "02-edit"):
+        (evals / name).mkdir(parents=True)
+        (evals / name / "case.yaml").write_text(
+            "execution:\n  prompt: |\n    Review src please.\n", encoding="utf-8"
+        )
+    truth = tmp_path / "truth.json"
+    truth.write_text(
+        json.dumps(
+            {
+                "01-review": {"done": True, "bugs": [], "decided": []},
+                "02-edit": {"measure": False, "why": "the prompt asks for an edit"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    common = [
+        sys.executable,
+        str(SCRIPT),
+        "--evals-dir",
+        str(evals),
+        "--seeded-dir",
+        str(tmp_path / "none"),
+        "--truth",
+        str(truth),
+        "--raw-dir",
+        str(tmp_path / "raw"),
+        "--dry-run",
+    ]
+    (tmp_path / "none").mkdir()
+    proc = subprocess.run(
+        [*common, "--case", "eval/*"], capture_output=True, text=True, check=False
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "eval/01-review" in proc.stdout
+    assert "eval/02-edit" not in proc.stdout
+    alone = subprocess.run(
+        [*common, "--case", "eval/02-*"], capture_output=True, text=True, check=False
+    )
+    assert alone.returncode == 1
+    assert "no case matches" in alone.stderr

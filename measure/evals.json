@@ -25,5 +25,17 @@
       {"id": "fixme", "file": "src/billing/export.py", "line": 20, "keywords": ["FIXME"]}
     ],
     "decided": []
+  },
+  "07-gate-block": {
+    "measure": false,
+    "why": "the prompt asks for an edit, which the measurement forbids (no Edit or Write)"
+  },
+  "08-verifier-refutes": {"done": true, "bugs": [], "decided": []},
+  "09-broken-link": {
+    "done": false,
+    "bugs": [
+      {"id": "broken-link", "file": "docs/index.md", "line": 8, "keywords": ["configuration.md"]}
+    ],
+    "decided": []
   }
 }
