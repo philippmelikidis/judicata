@@ -1,8 +1,8 @@
 # judicata
 
-**Make AI reviews converge.** Decide once what "done" means, and every chat, every agent and
-every new session judges your work against the same yardstick and remembers what you already
-settled.
+**AI reviews that remember what you decided and know when to stop.** Decide once what "done"
+means, and every chat, every agent and every new session judges your work against the same
+yardstick and remembers what you already settled.
 
 *Res judicata*: what has been decided is not argued again.
 
@@ -154,6 +154,22 @@ Some loops find a new nit forever. Others call it "done" while a required check 
 | **not converged** | two rounds in a row without fewer open blockers |
 | **round limit reached** | 5 rounds by default; both limits are set in the contract |
 
+## Measured so far
+
+One small run (2026-10-19, judicata 0.1.0, claude-opus-5-5, 4 cases, 1 trial per case and arm),
+judicata against plain Claude Code on the same cases. Method, all metrics and limits:
+[docs/measurement.md](docs/measurement.md).
+
+| Metric | judicata | plain Claude |
+| --- | --- | --- |
+| Re-raise rate: points decided earlier that a fresh session reports again | 0 of 3 | 4 of 4 |
+| Converged within 2 rounds (seeded cases) | 0 of 2 | 1 of 2 |
+
+With one trial per case this is a direction, not a significant result. In this run judicata did
+not bring up settled points again, but it did not converge faster: on convergence plain Claude
+did better. The two arms do not count the same decided points (see the metric definitions), so
+the denominators differ. This run is the baseline for 0.1, one trial per case.
+
 ## How it works
 
 ```mermaid
@@ -177,7 +193,6 @@ flowchart LR
 - **Blockers need evidence.** Outside the contract, only a correctness, security or factual
   finding with a concrete scenario can block. Everything else is at most a note. Every quote a
   reviewer cites must read exactly at the cited file and line, so no reviewer can invent one.
-  finding with a concrete scenario can block. Everything else is at most a note.
 - **Blockers are challenged.** A verifier tries to refute every blocker from a judgment
   criterion or outside the contract, one short read-only run each (at most 5 per round, more
   only if you say yes). A blocker it refutes with concrete counter-evidence becomes a note you
@@ -317,8 +332,10 @@ differ from the source. Every change to shipped files (manifest, skills, agents,
 scripts, templates) needs an entry under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) or a
 higher version in `.claude-plugin/plugin.json`; `python3 tools/check_version.py` checks this in
 CI. To release: raise the version, move the Unreleased entries under it, tag `v<version>`.
-Five acceptance evals in `evals/` check the plugin's
-behavior in Claude Code against a baseline without the plugin. See
+Six acceptance evals in `evals/` check the plugin's
+behavior in Claude Code against a baseline without the plugin. They test plugin-specific behavior
+(for example that a rejected finding stays rejected in the ledger) and are not a performance
+comparison; for that see [Measured so far](#measured-so-far). See
 [Development](docs/reference.md#development).
 
 ## License
