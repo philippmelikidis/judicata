@@ -11,7 +11,7 @@
     {
       "name": "judicata",
       "source": "./",
-      "description": "Reviews that converge: a frozen contract defines when an artifact is done, and a ledger in the repo remembers what was already decided."
+      "description": "AI reviews that remember what you decided and know when to stop: a frozen contract defines when an artifact is done, and a ledger in the repo remembers what was already decided."
     }
   ]
 }

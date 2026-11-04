@@ -83,7 +83,7 @@ model and case count. Raw results (stream of every session, replies, per trial d
 `--plugin-dir` measures another checkout (for example a release tag in a worktree), `--keep-temp` keeps the
 throwaway projects.
 
-Baseline for 0.1 (not run yet, 8 trials and at most 16 sessions):
+Baseline for 0.1 (run on 2026-10-19, see Results; 8 trials and at most 16 sessions):
 
 ```
 python3 measure/measure.py --allow-bash --case 'eval/01-*' --case 'eval/03-*' --case 'seeded/*' --max-rounds 2 --max-cost-usd 10 --raw-dir <folder outside this repository>
@@ -103,11 +103,11 @@ python3 measure/measure.py --allow-bash --case 'eval/01-*' --case 'eval/03-*' --
 The first two runs (2026-10-19, one seeded case, Sonnet, 0.48 and 0.53 USD) only show that the script works,
 they are no baseline: without `--allow-bash` the judicata arm could not submit the reviewer answer (heredoc
 denied) and so recorded no decision, and the first run's prompt ("do not change any files") kept it from
-writing its ledger at all. The baseline for 0.1 is still to run with the command above.
+writing its ledger at all. The run below, made with the command above, is the baseline for 0.1.
 
 <!-- measurement results, newest first -->
 
-### 2026-10-19 (run 20261019-213816-56ab6b)
+### 2026-10-19 (run 20261019-213816-56ab6b): baseline for 0.1, one trial per case
 
 - judicata 0.1.0 (v0.1.0-3-g643cf4d), Claude Code 2.1.303, model: claude-opus-5-5
 - cases: 4 (eval/01-rejected-finding, eval/03-required-blocker, seeded/inventory, seeded/invoice), trials per case and arm: 1, max rounds: 2, seed: judicata
