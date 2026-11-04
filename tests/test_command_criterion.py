@@ -87,7 +87,7 @@ def test_required_judgment_criterion_stays_pending_and_keeps_the_round_open(proj
 
 
 def test_huge_output_still_yields_the_last_lines(project):
-    project.write_contract("code", command_contract("seq 1 3000000; exit 1"))
+    project.write_contract("code", command_contract("seq -f %.0f 1 3000000; exit 1"))
 
     [blocker] = project.review()["blockers"]
 
